@@ -1,0 +1,50 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: loaded
+      POSTGRES_USER: loaded
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-loaded_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - loaded_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loaded"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://loaded:${POSTGRES_PASSWORD:-loaded_dev}@postgres:5432/loaded
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - loaded_net
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - loaded_net
+
+networks:
+  loaded_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
