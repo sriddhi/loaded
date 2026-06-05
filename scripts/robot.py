@@ -127,6 +127,7 @@ def collect_context(module: str | None) -> str:
 
 
 def load_last_scores(module: str | None) -> dict:
+    """Load scores from the most recent run with the same scope."""
     results_dir = ROOT / "ai/benchmarks/results"
     if not results_dir.exists():
         return {}
@@ -138,6 +139,44 @@ def load_last_scores(module: str | None) -> dict:
         return json.loads(prior[-1].read_text()).get("scores", {})
     except Exception:
         return {}
+
+
+def print_summary(result: dict, iteration: int, scope_label: str):
+    """Print a formatted summary table from the result."""
+    scores = result.get("scores", {})
+    overall = scores.get("overall", 0)
+    delta = result.get("delta_from_last_run", {}).get("overall", 0)
+    delta_str = f"+{delta:.1f}" if delta > 0 else f"{delta:.1f}"
+
+    print(f"\n  Overall: {overall}/10  △ {delta_str}")
+
+    dims = scores.get("dimensions", {})
+    if dims:
+        print(f"\n  {'Dimension':<28} {'Score':>6}  {'Delta':>6}")
+        print(f"  {'─'*28} {'─'*6}  {'─'*6}")
+        dim_deltas = result.get("delta_from_last_run", {}).get("dimensions", {})
+        for k, v in dims.items():
+            d = dim_deltas.get(k, 0)
+            d_str = f"+{d:.1f}" if d > 0 else f"{d:.1f}"
+            print(f"  {k.replace('_',' ').title():<28} {v:>5.1f}   {d_str:>6}")
+
+    modules = scores.get("modules", {})
+    if modules:
+        print(f"\n  {'Module':<16} {'Overall':>7}  {'Complete':>8}  {'Tests':>6}  {'Guard':>6}  {'Code':>6}")
+        print(f"  {'─'*16} {'─'*7}  {'─'*8}  {'─'*6}  {'─'*6}  {'─'*6}")
+        mod_deltas = result.get("delta_from_last_run", {}).get("modules", {})
+        for mod, mv in modules.items():
+            d = mod_deltas.get(mod, {}).get("overall", 0)
+            d_str = f"△{d:+.1f}" if d != 0 else "     "
+            print(f"  {mod:<16} {mv.get('overall',0):>5.1f}{d_str:>4}  "
+                  f"{mv.get('completeness',0):>7.1f}  "
+                  f"{mv.get('test_coverage',0):>5.1f}  "
+                  f"{mv.get('guardrails',0):>5.1f}  "
+                  f"{mv.get('code_quality',0):>5.1f}")
+
+    next_action = result.get("next_action", "")
+    if next_action:
+        print(f"\n  ⚡ Next action: {next_action}")
 
 
 def save_result(result: dict, iteration: int, module: str | None):
@@ -280,8 +319,8 @@ def main():
 
         if result:
             save_result(result, i, args.module)
+            print_summary(result, i, scope_label)
             overall = result.get("scores", {}).get("overall", 0)
-            print(f"  Overall score: {overall}/10")
 
             if overall >= args.until:
                 print(f"\n✅ Target {args.until} reached at iteration {i}. Done.")
@@ -290,10 +329,7 @@ def main():
             last_scores = result.get("scores", {})
 
             if i < args.iterations:
-                next_action = result.get("next_action", "")
-                if next_action:
-                    print(f"\n  Next action: {next_action}\n")
-                print(f"  Continuing to iteration {i + 1}...\n")
+                print(f"\n  Continuing to iteration {i + 1}...\n")
 
     print("\n🤖 Robot complete.")
 
