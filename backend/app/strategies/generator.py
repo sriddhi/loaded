@@ -59,7 +59,10 @@ def generate_strategy(prompt: str) -> StrategyConfig:
     except anthropic.APIError as e:
         raise RuntimeError(f"Claude API error: {e}") from e
 
-    raw = message.content[0].text.strip()
+    text_blocks = [b for b in message.content if b.type == "text"]
+    if not text_blocks:
+        raise RuntimeError("Claude returned no text content in response")
+    raw = text_blocks[0].text.strip()
 
     # Strip markdown code fences if Claude added them despite instructions
     if raw.startswith("```"):
