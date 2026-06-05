@@ -4,21 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build System — Generator & Evaluator (MANDATORY)
 
-**Before writing any code for a new feature, you must:**
+The AI system operates in two modes. Read `ai/README.md` for full details.
 
-1. Create `ai/generator/{module}/{feature}_generator.md` — full build spec
-2. Create `ai/evaluator/{module}/{feature}_evaluator.md` — verification checklist
-3. Get confirmation before proceeding to build
+### Mode 1 — Build Mode (any feature work)
 
-**After building a feature:**
+**Before writing any code:**
+1. Write `ai/generator/{module}/{feature}_generator.md` — full build spec
+2. Write `ai/evaluator/{module}/{feature}_evaluator.md` — verification checklist
+3. Get user confirmation, then lock both with `./scripts/lock_prompt.sh`
 
-1. Run the evaluator prompt to audit the implementation
-2. Save the score to `ai/benchmarks/results/{feature}_{date}.json`
-3. Iterate on the prompts if overall score < 8.0
+**After building:**
+1. Run the feature evaluator prompt against the code
+2. Save score to `ai/benchmarks/results/{feature}_{date}.json`
+3. Fix all ❌ failures before considering the feature done
 
-The `ai/` folder mirrors the codebase. Every module (`strategies/`, `market_data/`, `portfolio/`, `auth/`, etc.) has a matching folder under both `ai/generator/` and `ai/evaluator/`.
+### Mode 2 — Robot Mode (when user says "run the robot")
 
-See `ai/README.md` for the full workflow and file conventions.
+```bash
+python scripts/robot.py                            # default: 3 iterations, target 9.0
+python scripts/robot.py --iterations 10 --until 9.0
+```
+
+The robot scores the entire project autonomously across 6 dimensions and loops until the target score is reached. Do not interrupt it mid-run.
+
+### What never changes
+- No code before generator + evaluator are confirmed
+- Locked prompts cannot be modified (enforced by git pre-commit hook)
+- Every benchmark result is saved — never deleted
 
 ---
 
