@@ -1,0 +1,16 @@
+{
+  "locked_files": [
+    {
+      "path": "ai/generator/strategies/strategy_generator.md",
+      "sha256": "42a7d09c2906e537fc3111f5b812e3d8add3f8032dad64fef0da5a9b721371c3",
+      "locked_at": "2026-06-05T20:00:28Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/strategies/strategy_evaluator.md",
+      "sha256": "4d918bfb7a6f049d44574c35aa654849bfea76b4faf906e8115dee165be4e8b4",
+      "locked_at": "2026-06-05T20:00:34Z",
+      "version": "1.0"
+    }
+  ]
+}

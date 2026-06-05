@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Loaded — pre-commit hook
+# Blocks commits that modify locked generator/evaluator prompt files.
+
+set -euo pipefail
+
+LOCKS_FILE="ai/locks/locked.json"
+ROOT="$(git rev-parse --show-toplevel)"
+LOCKS_PATH="$ROOT/$LOCKS_FILE"
+
+# If no locks file yet, nothing to enforce
+if [[ ! -f "$LOCKS_PATH" ]]; then
+  exit 0
+fi
+
+# Get list of staged files
+STAGED=$(git diff --cached --name-only)
+
+if [[ -z "$STAGED" ]]; then
+  exit 0
+fi
+
+# Read locked file paths from JSON (requires python3, always available on macOS)
+LOCKED_FILES=$(python3 -c "
+import json, sys
+data = json.load(open('$LOCKS_PATH'))
+for entry in data.get('locked_files', []):
+    print(entry['path'])
+" 2>/dev/null || echo "")
+
+if [[ -z "$LOCKED_FILES" ]]; then
+  exit 0
+fi
+
+BLOCKED=()
+while IFS= read -r staged_file; do
+  while IFS= read -r locked_file; do
+    if [[ "$staged_file" == "$locked_file" ]]; then
+      BLOCKED+=("$staged_file")
+    fi
+  done <<< "$LOCKED_FILES"
+done <<< "$STAGED"
+
+if [[ ${#BLOCKED[@]} -gt 0 ]]; then
+  echo ""
+  echo "🔒 COMMIT BLOCKED — locked prompt files cannot be modified"
+  echo ""
+  for f in "${BLOCKED[@]}"; do
+    echo "   ✗  $f"
+  done
+  echo ""
+  echo "   These generator/evaluator prompts are finalized and locked."
+  echo "   To unlock: ./scripts/unlock_prompt.sh <file> \"<reason>\""
+  echo ""
+  exit 1
+fi
+
+exit 0
