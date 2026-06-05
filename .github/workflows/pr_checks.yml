@@ -34,13 +34,10 @@ jobs:
         run: ruff check backend/
 
       - name: mypy type check
-        run: mypy backend/app/ --ignore-missing-imports
+        run: mypy backend/app/ --explicit-package-bases --ignore-missing-imports
 
       - name: pytest (unit tests)
-        run: |
-          pytest backend/tests/ -x -v \
-            --ignore=backend/tests/test_integration.py \
-            --ignore=backend/tests/test_alpaca_connectivity.py
+        run: pytest backend/tests/ -x -v
 
   frontend-quality:
     name: frontend-quality

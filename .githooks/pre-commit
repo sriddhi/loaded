@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Loaded — pre-commit hook
-# Runs: locked-file check → ruff format → ruff lint → mypy → pytest → prettier → eslint → tsc
+# Runs: locked-file check → test coverage gate → ruff format → ruff lint → mypy → pytest → prettier → eslint → tsc
 
 set -euo pipefail
 
@@ -47,6 +47,36 @@ for e in data.get('locked_files', []):
     echo "   To unlock: ./scripts/unlock_prompt.sh <file> \"<reason>\""
     echo ""
     exit 1
+  fi
+fi
+
+# ── 2. New app file without test check (always runs when .py staged) ──────────
+NEW_APP_PY=$(git diff --cached --name-only --diff-filter=A | grep '^backend/app/.*\.py$' | grep -v '__init__\.py' || true)
+if [[ -n "$NEW_APP_PY" ]]; then
+  header "test coverage gate"
+  MISSING_TESTS=()
+  while IFS= read -r app_file; do
+    # backend/app/strategies/generator.py → test_strategies_generator.py
+    relative="${app_file#backend/app/}"          # strategies/generator.py
+    dir=$(dirname "$relative")                    # strategies
+    base=$(basename "$relative" .py)              # generator
+    expected="backend/tests/test_${dir}_${base}.py"
+    # Also accept a flat name like test_generator.py
+    flat="backend/tests/test_${base}.py"
+    if [[ ! -f "$ROOT/$expected" && ! -f "$ROOT/$flat" ]]; then
+      MISSING_TESTS+=("$app_file  →  expected: $expected")
+    fi
+  done <<< "$NEW_APP_PY"
+
+  if [[ ${#MISSING_TESTS[@]} -gt 0 ]]; then
+    echo ""
+    echo "🚫 New app files require a test file — none found for:"
+    for m in "${MISSING_TESTS[@]}"; do echo "   ✗  $m"; done
+    echo ""
+    echo "   Create the test file and stage it in the same commit."
+    FAILED=1
+  else
+    pass "test coverage gate"
   fi
 fi
 
@@ -97,18 +127,15 @@ if [[ -n "$PY_STAGED" ]]; then
     echo "⚠️  mypy not found — skipping (run: pip install mypy)"
   fi
 
-  # 5. pytest (unit only, no integration)
+  # 5. pytest (unit only — integration tests skipped via markers in-file)
   header "pytest (unit)"
   if command -v pytest &>/dev/null; then
     pytest_exit=0
-    pytest "$BACKEND/tests/" -x -q \
-        --ignore="$BACKEND/tests/test_integration.py" \
-        --ignore="$BACKEND/tests/test_alpaca_connectivity.py" \
-        2>&1 || pytest_exit=$?
+    pytest "$BACKEND/tests/" -x -q 2>&1 || pytest_exit=$?
     if [[ $pytest_exit -eq 0 || $pytest_exit -eq 5 ]]; then
       pass "pytest"
     else
-      fail "pytest" "cd backend && pytest tests/ -x --ignore=tests/test_integration.py"
+      fail "pytest" "cd backend && pytest tests/ -x"
     fi
   else
     echo "⚠️  pytest not found — skipping (run: pip install pytest)"

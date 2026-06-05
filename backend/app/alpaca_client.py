@@ -1,6 +1,11 @@
 import os
 
-from alpaca.trading.client import TradingClient
+try:
+    from alpaca.trading.client import TradingClient
+
+    _ALPACA_AVAILABLE = True
+except ImportError:
+    _ALPACA_AVAILABLE = False
 
 
 def paper_trading_enabled() -> bool:
@@ -12,6 +17,8 @@ def alpaca_configured() -> bool:
 
 
 def alpaca_ok() -> tuple[bool, str | None]:
+    if not _ALPACA_AVAILABLE:
+        return False, "alpaca package not installed"
     if not alpaca_configured():
         return False, "missing_credentials"
 
