@@ -11,6 +11,18 @@
       "sha256": "4d918bfb7a6f049d44574c35aa654849bfea76b4faf906e8115dee165be4e8b4",
       "locked_at": "2026-06-05T20:00:34Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/dx/code_quality_generator.md",
+      "sha256": "efb353473a931346ee742eb897f6b83f0382887ac2f268035af28935d655ac25",
+      "locked_at": "2026-06-05T21:55:44Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/dx/code_quality_evaluator.md",
+      "sha256": "03479d4b4f2c4ec07ff3c0368a99ca1021333d0b9f358c2aaba047cd2e7191af",
+      "locked_at": "2026-06-05T21:55:44Z",
+      "version": "1.0"
     }
   ]
 }
