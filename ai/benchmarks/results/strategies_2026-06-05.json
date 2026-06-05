@@ -1,0 +1,38 @@
+{
+  "feature": "strategies",
+  "date": "2026-06-05",
+  "generator_version": "1.0",
+  "evaluator_version": "1.0",
+  "scores": {
+    "completeness": 9.3,
+    "ui_coverage": 8.7,
+    "e2e_coverage": 7.5,
+    "overall": 8.4
+  },
+  "passing_checks": 34,
+  "failing_checks": 4,
+  "total_checks": 38,
+  "failures": [
+    {
+      "check": "yfinance bad symbol not caught gracefully",
+      "file": "backend/app/strategies/evaluator.py",
+      "fix": "wrap _fetch_ohlcv in evaluate_strategy with try/except ValueError"
+    },
+    {
+      "check": "get_db dead code / unused Depends import",
+      "file": "backend/app/strategies/router.py",
+      "fix": "remove get_db function and Depends import"
+    },
+    {
+      "check": "no spinner animation during generate loading state",
+      "file": "frontend/src/app/strategies/page.tsx",
+      "fix": "add CSS keyframe spinner alongside loading text"
+    },
+    {
+      "check": "ANTHROPIC_API_KEY not set in .env",
+      "file": ".env",
+      "fix": "add ANTHROPIC_API_KEY=<key> to .env before running"
+    }
+  ],
+  "notes": "Strong first pass. 3 code fixes needed before ship-ready. .env key is a manual step."
+}

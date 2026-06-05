@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -11,6 +11,39 @@ import {
 } from "recharts";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+const spinnerStyle = `
+  @keyframes spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes pulse-dot {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+    40%            { opacity: 1;   transform: scale(1.1); }
+  }
+  .spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 2px solid #555;
+    border-top-color: #0a0a0a;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 7px;
+  }
+  .pulse-dots span {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin: 0 2px;
+    background: #0a0a0a;
+    border-radius: 50%;
+    animation: pulse-dot 1.2s infinite ease-in-out;
+  }
+  .pulse-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .pulse-dots span:nth-child(3) { animation-delay: 0.4s; }
+`;
 
 interface StrategyConfig {
   name: string;
@@ -118,6 +151,7 @@ export default function StrategiesPage() {
 
   return (
     <main style={{ background: "#0a0a0a", minHeight: "100vh", color: "#f5f5f5", padding: "48px 32px", fontFamily: "inherit" }}>
+      <style>{spinnerStyle}</style>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, letterSpacing: "-0.5px" }}>
         Strategy Lab
       </h1>
@@ -167,7 +201,15 @@ export default function StrategiesPage() {
             transition: "background 0.15s",
           }}
         >
-          {generating ? "Claude is thinking..." : "Generate Strategy"}
+          {generating ? (
+            <>
+              <span className="spinner" />
+              Claude is thinking
+              <span className="pulse-dots" style={{ marginLeft: 4 }}>
+                <span /><span /><span />
+              </span>
+            </>
+          ) : "Generate Strategy"}
         </button>
       </section>
 
@@ -275,7 +317,15 @@ export default function StrategiesPage() {
               cursor: evaluating ? "not-allowed" : "pointer",
             }}
           >
-            {evaluating ? "Running backtest..." : "Run Backtest"}
+            {evaluating ? (
+            <>
+              <span className="spinner" />
+              Running backtest
+              <span className="pulse-dots" style={{ marginLeft: 4 }}>
+                <span /><span /><span />
+              </span>
+            </>
+          ) : "Run Backtest"}
           </button>
 
           {evalError && (
