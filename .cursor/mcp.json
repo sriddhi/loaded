@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "alpaca": {
+      "command": "./scripts/run_alpaca_mcp.sh",
+      "args": [],
+      "env": {
+        "ALPACA_PAPER_TRADE": "true"
+      }
+    }
+  }
+}

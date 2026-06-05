@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# Loaded — pre-commit hook
+# Runs: locked-file check → test coverage gate → ruff format → ruff lint → mypy → pytest → prettier → eslint → tsc
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+STAGED=$(git diff --cached --name-only)
+STAGED_MODIFIED=$(git diff --cached --name-only --diff-filter=M)
+
+if [[ -z "$STAGED" ]]; then
+  exit 0
+fi
+
+PY_STAGED=$(echo "$STAGED" | grep '\.py$' || true)
+TS_STAGED=$(echo "$STAGED" | grep -E '\.(ts|tsx)$' || true)
+
+FAILED=0
+
+header() { echo ""; echo "── $1 ──"; }
+pass()   { echo "✅ $1"; }
+fail()   { echo "❌ $1"; echo "   Fix: $2"; FAILED=1; }
+
+# ── 1. Locked prompt check (always runs) ──────────────────────────────────────
+LOCKS_PATH="$ROOT/ai/locks/locked.json"
+if [[ -f "$LOCKS_PATH" ]]; then
+  LOCKED_FILES=$(python3 -c "
+import json
+data = json.load(open('$LOCKS_PATH'))
+for e in data.get('locked_files', []):
+    print(e['path'])
+" 2>/dev/null || echo "")
+
+  BLOCKED=()
+  while IFS= read -r staged_file; do
+    while IFS= read -r locked_file; do
+      [[ "$staged_file" == "$locked_file" ]] && BLOCKED+=("$staged_file")
+    done <<< "$LOCKED_FILES"
+  done <<< "$STAGED_MODIFIED"
+
+  if [[ ${#BLOCKED[@]} -gt 0 ]]; then
+    echo ""
+    echo "🔒 COMMIT BLOCKED — locked prompt files cannot be modified"
+    echo ""
+    for f in "${BLOCKED[@]}"; do echo "   ✗  $f"; done
+    echo ""
+    echo "   To unlock: ./scripts/unlock_prompt.sh <file> \"<reason>\""
+    echo ""
+    exit 1
+  fi
+fi
+
+# ── 2. New app file without test check (always runs when .py staged) ──────────
+NEW_APP_PY=$(git diff --cached --name-only --diff-filter=A | grep '^backend/app/.*\.py$' | grep -v '__init__\.py' || true)
+if [[ -n "$NEW_APP_PY" ]]; then
+  header "test coverage gate"
+  MISSING_TESTS=()
+  while IFS= read -r app_file; do
+    # backend/app/strategies/generator.py → test_strategies_generator.py
+    relative="${app_file#backend/app/}"          # strategies/generator.py
+    dir=$(dirname "$relative")                    # strategies
+    base=$(basename "$relative" .py)              # generator
+    expected="backend/tests/test_${dir}_${base}.py"
+    # Also accept a flat name like test_generator.py
+    flat="backend/tests/test_${base}.py"
+    if [[ ! -f "$ROOT/$expected" && ! -f "$ROOT/$flat" ]]; then
+      MISSING_TESTS+=("$app_file  →  expected: $expected")
+    fi
+  done <<< "$NEW_APP_PY"
+
+  if [[ ${#MISSING_TESTS[@]} -gt 0 ]]; then
+    echo ""
+    echo "🚫 New app files require a test file — none found for:"
+    for m in "${MISSING_TESTS[@]}"; do echo "   ✗  $m"; done
+    echo ""
+    echo "   Create the test file and stage it in the same commit."
+    FAILED=1
+  else
+    pass "test coverage gate"
+  fi
+fi
+
+# ── Python checks (only if .py files staged) ──────────────────────────────────
+if [[ -n "$PY_STAGED" ]]; then
+
+  BACKEND="$ROOT/backend"
+
+  # Activate venv if present
+  if [[ -f "$BACKEND/.venv/bin/activate" ]]; then
+    source "$BACKEND/.venv/bin/activate"
+  fi
+
+  # 2. ruff format
+  header "ruff format"
+  if command -v ruff &>/dev/null; then
+    if ruff format --check "$BACKEND/" --quiet 2>&1; then
+      pass "ruff format"
+    else
+      ruff format --check "$BACKEND/" 2>&1 || true
+      fail "ruff format" "cd backend && ruff format ."
+    fi
+  else
+    echo "⚠️  ruff not found — skipping (run: pip install ruff)"
+  fi
+
+  # 3. ruff lint
+  header "ruff lint"
+  if command -v ruff &>/dev/null; then
+    if ruff check "$BACKEND/" --quiet 2>&1; then
+      pass "ruff lint"
+    else
+      ruff check "$BACKEND/" 2>&1 || true
+      fail "ruff lint" "cd backend && ruff check . --fix"
+    fi
+  fi
+
+  # 4. mypy
+  header "mypy"
+  if command -v mypy &>/dev/null; then
+    if mypy "$BACKEND/app/" --explicit-package-bases --ignore-missing-imports 2>&1 | grep -q "^Success:"; then
+      pass "mypy"
+    else
+      mypy "$BACKEND/app/" --explicit-package-bases --ignore-missing-imports 2>&1 || true
+      fail "mypy" "cd backend && mypy app/ --explicit-package-bases"
+    fi
+  else
+    echo "⚠️  mypy not found — skipping (run: pip install mypy)"
+  fi
+
+  # 5. pytest (unit only — integration tests skipped via markers in-file)
+  header "pytest (unit)"
+  if command -v pytest &>/dev/null; then
+    pytest_exit=0
+    pytest "$BACKEND/tests/" -x -q 2>&1 || pytest_exit=$?
+    if [[ $pytest_exit -eq 0 || $pytest_exit -eq 5 ]]; then
+      pass "pytest"
+    else
+      fail "pytest" "cd backend && pytest tests/ -x"
+    fi
+  else
+    echo "⚠️  pytest not found — skipping (run: pip install pytest)"
+  fi
+
+fi
+
+# ── Frontend checks (only if .ts/.tsx files staged) ───────────────────────────
+if [[ -n "$TS_STAGED" ]]; then
+
+  FRONTEND="$ROOT/frontend"
+
+  # 6. prettier
+  header "prettier"
+  if [[ -f "$FRONTEND/node_modules/.bin/prettier" ]]; then
+    if "$FRONTEND/node_modules/.bin/prettier" --check "$FRONTEND/src/" --log-level=warn 2>&1; then
+      pass "prettier"
+    else
+      fail "prettier" "cd frontend && npx prettier --write src/"
+    fi
+  else
+    echo "⚠️  prettier not found — skipping (run: cd frontend && npm ci)"
+  fi
+
+  # 7. eslint
+  header "eslint"
+  if [[ -f "$FRONTEND/node_modules/.bin/eslint" ]]; then
+    if "$FRONTEND/node_modules/.bin/eslint" "$FRONTEND/src/" --max-warnings=0 2>&1; then
+      pass "eslint"
+    else
+      fail "eslint" "cd frontend && npx eslint src/ --fix"
+    fi
+  else
+    echo "⚠️  eslint not found — skipping (run: cd frontend && npm ci)"
+  fi
+
+  # 8. tsc
+  header "tsc"
+  if [[ -f "$FRONTEND/node_modules/.bin/tsc" ]]; then
+    if (cd "$FRONTEND" && npx tsc --noEmit 2>&1); then
+      pass "tsc"
+    else
+      fail "tsc" "cd frontend && npx tsc --noEmit"
+    fi
+  else
+    echo "⚠️  tsc not found — skipping (run: cd frontend && npm ci)"
+  fi
+
+fi
+
+echo ""
+
+if [[ $FAILED -eq 1 ]]; then
+  echo "🚫 Commit blocked — fix the issues above and try again."
+  exit 1
+fi
+
+echo "✅ All checks passed."
+exit 0

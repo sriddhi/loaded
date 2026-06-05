@@ -20,7 +20,9 @@ export default function HeartbeatDot() {
     } catch {
       setStatus("offline");
     }
-    setLastChecked(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    setLastChecked(
+      new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    );
   }, []);
 
   useEffect(() => {
@@ -42,51 +44,55 @@ export default function HeartbeatDot() {
   }[status];
 
   return (
-    <div style={{
-      position: "fixed",
-      bottom: "28px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      opacity: 0.6,
-    }}>
+    <div
+      style={{
+        position: "fixed",
+        bottom: "28px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        opacity: 0.6,
+      }}
+    >
       {/* Pulsing dot */}
       <div style={{ position: "relative", width: "8px", height: "8px" }}>
         {/* Pulse ring — only when online */}
         {status === "online" && (
-          <span style={{
+          <span
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              background: color,
+              opacity: 0.3,
+              animation: "ping 2s ease-in-out infinite",
+            }}
+          />
+        )}
+        <span
+          style={{
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
             background: color,
-            opacity: 0.3,
-            animation: "ping 2s ease-in-out infinite",
-          }} />
-        )}
-        <span style={{
-          position: "absolute",
-          inset: 0,
-          borderRadius: "50%",
-          background: color,
-        }} />
+          }}
+        />
       </div>
 
       {/* Label */}
-      <span style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "11px",
-        letterSpacing: "0.08em",
-        color: "var(--muted)",
-        userSelect: "none",
-      }}>
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "11px",
+          letterSpacing: "0.08em",
+          color: "var(--muted)",
+          userSelect: "none",
+        }}
+      >
         {label}
-        {lastChecked && (
-          <span style={{ marginLeft: "6px", opacity: 0.5 }}>
-            · {lastChecked}
-          </span>
-        )}
+        {lastChecked && <span style={{ marginLeft: "6px", opacity: 0.5 }}>· {lastChecked}</span>}
       </span>
 
       <style>{`
