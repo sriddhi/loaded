@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Build System — Generator & Evaluator (MANDATORY)
+
+**Before writing any code for a new feature, you must:**
+
+1. Create `ai/generator/{module}/{feature}_generator.md` — full build spec
+2. Create `ai/evaluator/{module}/{feature}_evaluator.md` — verification checklist
+3. Get confirmation before proceeding to build
+
+**After building a feature:**
+
+1. Run the evaluator prompt to audit the implementation
+2. Save the score to `ai/benchmarks/results/{feature}_{date}.json`
+3. Iterate on the prompts if overall score < 8.0
+
+The `ai/` folder mirrors the codebase. Every module (`strategies/`, `market_data/`, `portfolio/`, `auth/`, etc.) has a matching folder under both `ai/generator/` and `ai/evaluator/`.
+
+See `ai/README.md` for the full workflow and file conventions.
+
+---
+
 ## What is Loaded
 
 Loaded is the enterprise-grade evolution of the Vertex trading strategy POC. It is a dockerized full-stack web application targeting both GenZ traders and seasoned professionals — minimal, clean, data-first design.
@@ -49,7 +69,9 @@ loaded/
 └── .env.example       Copy to .env before running
 ```
 
-**Data flow:** Frontend polls `NEXT_PUBLIC_API_URL/health` every 30 seconds. The backend checks PostgreSQL connectivity on each health request via `asyncpg` (no connection pool — opens and closes per request currently).
+**Data flow:** Frontend polls `NEXT_PUBLIC_API_URL/health` every 30 seconds. The backend checks PostgreSQL connectivity on each health request via `asyncpg` (no connection pool — opens and closes per request currently). Health also reports Alpaca API connectivity when credentials are configured.
+
+**Alpaca MCP:** Cursor loads `.cursor/mcp.json`, which runs `scripts/run_alpaca_mcp.sh` (sources `.env`, then `uvx alpaca-mcp-server`). Paper trading is the default.
 
 **Networking:** All containers share `loaded_net` bridge network. Service-to-service DNS uses container service names (`postgres`, `backend`, `frontend`). PostgreSQL has no exposed host port — only reachable from within the Docker network.
 
@@ -65,6 +87,22 @@ cp .env.example .env
 Key variables:
 - `POSTGRES_PASSWORD` — shared by compose and backend `DATABASE_URL`
 - `NEXT_PUBLIC_API_URL` — set to `http://localhost:8000` for local dev
+- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — Alpaca paper trading keys (optional until trading features)
+- `ALPACA_PAPER_TRADE` — defaults to `true`; set `false` for live trading
+
+## Alpaca MCP & Connectivity Tests
+
+Add Alpaca keys to `.env`, then verify:
+
+```bash
+# Config + MCP package checks (no API keys required for first 3 tests)
+cd backend && pytest tests/test_alpaca_connectivity.py -v
+
+# Full API connectivity (requires ALPACA_API_KEY + ALPACA_SECRET_KEY in .env)
+cd backend && pytest tests/test_alpaca_connectivity.py -v -k api_connectivity
+```
+
+Restart Cursor after changing `.cursor/mcp.json` or Alpaca credentials so the MCP server reloads.
 
 ## Backend
 
