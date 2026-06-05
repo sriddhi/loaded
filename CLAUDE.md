@@ -1,42 +1,76 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the single source of truth for how Claude operates in this repository. Read it fully before doing anything.
 
-## Build System — Generator & Evaluator (MANDATORY)
+---
 
-The AI system operates in two modes. Read `ai/README.md` for full details.
+## Rule #1 — Generator & Evaluator System (NON-NEGOTIABLE)
 
-### Mode 1 — Build Mode (any feature work)
+**Every piece of code built in this repo follows this system. No exceptions.**
 
-**Before writing any code:**
-1. Write `ai/generator/{module}/{feature}_generator.md` — full build spec
-2. Write `ai/evaluator/{module}/{feature}_evaluator.md` — verification checklist
-3. Get user confirmation, then lock both with `./scripts/lock_prompt.sh`
+This applies to:
+- New features
+- New endpoints or routes
+- New frontend pages or components
+- Refactors of existing modules
+- Bug fixes that touch more than one file
+- Any Claude Code session that involves writing or modifying code
 
-**After building:**
-1. Run the feature evaluator prompt against the code
-2. Save score to `ai/benchmarks/results/{feature}_{date}.json`
-3. Fix all ❌ failures before considering the feature done
+### Mode 1 — Build Mode
 
-### Mode 2 — Robot Mode (when user says "run the robot")
+Triggered when: planning or building anything.
 
-```bash
-python scripts/robot.py                            # default: 3 iterations, target 9.0
-python scripts/robot.py --iterations 10 --until 9.0
+```
+Plan → Generator Prompt → Evaluator Prompt → Confirm + Lock → Build → Evaluate → Benchmark
 ```
 
-The robot scores the entire project autonomously across 6 dimensions and loops until the target score is reached. Do not interrupt it mid-run.
+**Step by step:**
+1. Discuss and finalize the feature design in conversation — no code yet
+2. Claude writes `ai/generator/{module}/{feature}_generator.md` — the full build spec
+3. Claude writes `ai/evaluator/{module}/{feature}_evaluator.md` — the verification checklist
+4. User confirms both. Claude locks them: `./scripts/lock_prompt.sh <file>`
+5. Claude builds the feature using the generator as the only spec
+6. Claude runs the evaluator against the built code and reports the score
+7. All ❌ failures are fixed before the feature is considered done
+8. Score saved to `ai/benchmarks/results/{feature}_{date}.json`
+
+**Hard rules:**
+- No code is written before step 4 (confirmation + lock)
+- Locked prompt files cannot be committed with changes — the git pre-commit hook blocks it
+- To unlock: `./scripts/unlock_prompt.sh <file> "<reason>"` — reason is logged permanently
+- Generator and evaluator for the same feature must always be in sync
+
+### Mode 2 — Robot Mode
+
+Triggered when: user says **"run the robot"**.
+
+```bash
+python3 scripts/robot.py                               # full project, 3 iterations, target 9.0
+python3 scripts/robot.py --module strategies           # single module only
+python3 scripts/robot.py --iterations 10 --until 9.5  # custom loop
+python3 scripts/robot.py --list-modules                # see available modules
+python3 scripts/robot.py --dry-run                     # preview prompt, no API call
+```
+
+The robot runs `ai/evaluator/project_evaluator.md` autonomously. It scores two axes every run:
+- **Dimensions:** security, guardrails, unit tests, integration tests, feature completeness
+- **Modules:** per-module scores (completeness, test coverage, guardrails, code quality)
+
+It loops until overall score ≥ target or max iterations reached. Do not interrupt mid-run. Results saved to `ai/benchmarks/results/`.
 
 ### What never changes
-- No code before generator + evaluator are confirmed
-- Locked prompts cannot be modified (enforced by git pre-commit hook)
-- Every benchmark result is saved — never deleted
+- No code without a generator + evaluator
+- Locked prompts are immutable during build/test
+- Benchmark results are never deleted
+- See `ai/README.md` for full reference
 
 ---
 
 ## What is Loaded
 
 Loaded is the enterprise-grade evolution of the Vertex trading strategy POC. It is a dockerized full-stack web application targeting both GenZ traders and seasoned professionals — minimal, clean, data-first design.
+
+---
 
 ## Running the Stack
 
@@ -66,6 +100,8 @@ Services:
 - `http://localhost:8000` — FastAPI backend
 - PostgreSQL runs internally only (no exposed port)
 
+---
+
 ## Architecture
 
 ```
@@ -76,18 +112,30 @@ loaded/
 │       └── components/
 ├── backend/
 │   └── app/
-│       └── main.py   FastAPI entry point
-├── docker-compose.yml All three services + loaded_net bridge network
-└── .env.example       Copy to .env before running
+│       ├── main.py           FastAPI entry point + DB migrations
+│       └── strategies/       Strategy Generator + Evaluator module
+├── ai/                       Generator & Evaluator prompt system
+│   ├── generator/            Build specs (one per feature)
+│   ├── evaluator/            Verification checklists + project_evaluator.md
+│   ├── locks/                Locked prompt manifest + unlock audit log
+│   └── benchmarks/results/   All benchmark outputs
+├── scripts/
+│   ├── robot.py              Autonomous evaluator loop runner
+│   ├── lock_prompt.sh        Lock a finalized prompt
+│   └── unlock_prompt.sh      Unlock with mandatory reason
+├── docker-compose.yml
+└── .env.example
 ```
 
-**Data flow:** Frontend polls `NEXT_PUBLIC_API_URL/health` every 30 seconds. The backend checks PostgreSQL connectivity on each health request via `asyncpg` (no connection pool — opens and closes per request currently). Health also reports Alpaca API connectivity when credentials are configured.
+**Data flow:** Frontend polls `NEXT_PUBLIC_API_URL/health` every 30 seconds. The backend checks PostgreSQL connectivity on each health request via `asyncpg`. Health also reports Alpaca API connectivity when credentials are configured.
 
 **Alpaca MCP:** Cursor loads `.cursor/mcp.json`, which runs `scripts/run_alpaca_mcp.sh` (sources `.env`, then `uvx alpaca-mcp-server`). Paper trading is the default.
 
 **Networking:** All containers share `loaded_net` bridge network. Service-to-service DNS uses container service names (`postgres`, `backend`, `frontend`). PostgreSQL has no exposed host port — only reachable from within the Docker network.
 
 **Frontend build:** Uses `output: "standalone"` in `next.config.mjs` — the Docker image copies `.next/standalone` and runs `node server.js` directly (no `next start`).
+
+---
 
 ## Environment
 
@@ -99,40 +147,45 @@ cp .env.example .env
 Key variables:
 - `POSTGRES_PASSWORD` — shared by compose and backend `DATABASE_URL`
 - `NEXT_PUBLIC_API_URL` — set to `http://localhost:8000` for local dev
-- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — Alpaca paper trading keys (optional until trading features)
+- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — Alpaca paper trading keys
 - `ALPACA_PAPER_TRADE` — defaults to `true`; set `false` for live trading
+- `ANTHROPIC_API_KEY` — required for strategy generator and robot
+
+---
 
 ## Alpaca MCP & Connectivity Tests
-
-Add Alpaca keys to `.env`, then verify:
 
 ```bash
 # Config + MCP package checks (no API keys required for first 3 tests)
 cd backend && pytest tests/test_alpaca_connectivity.py -v
 
-# Full API connectivity (requires ALPACA_API_KEY + ALPACA_SECRET_KEY in .env)
+# Full API connectivity (requires keys in .env)
 cd backend && pytest tests/test_alpaca_connectivity.py -v -k api_connectivity
 ```
 
-Restart Cursor after changing `.cursor/mcp.json` or Alpaca credentials so the MCP server reloads.
+---
 
 ## Backend
 
-FastAPI with `asyncpg` (raw PostgreSQL, no ORM yet). New endpoints go in `backend/app/main.py` or new router files imported there. After changes, rebuild:
+FastAPI with `asyncpg` (raw PostgreSQL, no ORM). New endpoints go in new router files under `backend/app/{module}/router.py`, imported in `main.py`. After changes:
 
 ```bash
 docker compose build backend && docker compose up -d backend
 ```
 
+---
+
 ## Frontend
 
-Next.js 14 App Router. Components in `src/components/`, pages in `src/app/`. After changes, rebuild:
+Next.js 14 App Router. Components in `src/components/`, pages in `src/app/`. After changes:
 
 ```bash
 docker compose build frontend && docker compose up -d frontend
 ```
 
 `NEXT_PUBLIC_*` env vars are baked in at build time — changing them requires a rebuild.
+
+---
 
 ## Design Principles
 
