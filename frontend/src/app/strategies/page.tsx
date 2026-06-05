@@ -1,14 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { useState } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -150,7 +143,15 @@ export default function StrategiesPage() {
   const positive = (result?.total_return_pct ?? 0) >= 0;
 
   return (
-    <main style={{ background: "#0a0a0a", minHeight: "100vh", color: "#f5f5f5", padding: "48px 32px", fontFamily: "inherit" }}>
+    <main
+      style={{
+        background: "#0a0a0a",
+        minHeight: "100vh",
+        color: "#f5f5f5",
+        padding: "48px 32px",
+        fontFamily: "inherit",
+      }}
+    >
       <style>{spinnerStyle}</style>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, letterSpacing: "-0.5px" }}>
         Strategy Lab
@@ -181,9 +182,7 @@ export default function StrategiesPage() {
           }}
         />
 
-        {genError && (
-          <p style={{ color: "#ff4747", fontSize: 13, marginTop: 8 }}>{genError}</p>
-        )}
+        {genError && <p style={{ color: "#ff4747", fontSize: 13, marginTop: 8 }}>{genError}</p>}
 
         <button
           onClick={handleGenerate}
@@ -206,27 +205,42 @@ export default function StrategiesPage() {
               <span className="spinner" />
               Claude is thinking
               <span className="pulse-dots" style={{ marginLeft: 4 }}>
-                <span /><span /><span />
+                <span />
+                <span />
+                <span />
               </span>
             </>
-          ) : "Generate Strategy"}
+          ) : (
+            "Generate Strategy"
+          )}
         </button>
       </section>
 
       {/* ── Strategy Card ── */}
       {strategy && (
-        <section style={{ maxWidth: 720, marginBottom: 40, background: "#111", border: "1px solid #222", borderRadius: 10, padding: 24 }}>
+        <section
+          style={{
+            maxWidth: 720,
+            marginBottom: 40,
+            background: "#111",
+            border: "1px solid #222",
+            borderRadius: 10,
+            padding: 24,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{strategy.name}</h2>
-            <span style={{
-              background: TYPE_COLORS[strategy.type] ?? "#444",
-              color: "#0a0a0a",
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "2px 8px",
-              borderRadius: 4,
-              fontFamily: "monospace",
-            }}>
+            <span
+              style={{
+                background: TYPE_COLORS[strategy.type] ?? "#444",
+                color: "#0a0a0a",
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 4,
+                fontFamily: "monospace",
+              }}
+            >
               {strategy.type}
             </span>
           </div>
@@ -238,11 +252,26 @@ export default function StrategiesPage() {
           </p>
 
           {Object.keys(strategy.parameters).length > 0 && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: "monospace" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 13,
+                fontFamily: "monospace",
+              }}
+            >
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}>Parameter</th>
-                  <th style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}>Value</th>
+                  <th
+                    style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}
+                  >
+                    Parameter
+                  </th>
+                  <th
+                    style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}
+                  >
+                    Value
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -264,43 +293,68 @@ export default function StrategiesPage() {
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Backtest</h2>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
             <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Symbol</label>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
+                Symbol
+              </label>
               <input
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                 style={{
-                  background: "#111", border: "1px solid #222", borderRadius: 6,
-                  color: "#f5f5f5", padding: "8px 12px", fontSize: 14, width: 100,
-                  fontFamily: "monospace", outline: "none",
+                  background: "#111",
+                  border: "1px solid #222",
+                  borderRadius: 6,
+                  color: "#f5f5f5",
+                  padding: "8px 12px",
+                  fontSize: 14,
+                  width: 100,
+                  fontFamily: "monospace",
+                  outline: "none",
                 }}
               />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Period</label>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
+                Period
+              </label>
               <select
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
                 style={{
-                  background: "#111", border: "1px solid #222", borderRadius: 6,
-                  color: "#f5f5f5", padding: "8px 12px", fontSize: 14,
-                  fontFamily: "monospace", outline: "none",
+                  background: "#111",
+                  border: "1px solid #222",
+                  borderRadius: 6,
+                  color: "#f5f5f5",
+                  padding: "8px 12px",
+                  fontSize: 14,
+                  fontFamily: "monospace",
+                  outline: "none",
                 }}
               >
                 {["3mo", "6mo", "1y", "2y"].map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Capital ($)</label>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
+                Capital ($)
+              </label>
               <input
                 value={capital}
                 onChange={(e) => setCapital(e.target.value)}
                 type="number"
                 style={{
-                  background: "#111", border: "1px solid #222", borderRadius: 6,
-                  color: "#f5f5f5", padding: "8px 12px", fontSize: 14, width: 120,
-                  fontFamily: "monospace", outline: "none",
+                  background: "#111",
+                  border: "1px solid #222",
+                  borderRadius: 6,
+                  color: "#f5f5f5",
+                  padding: "8px 12px",
+                  fontSize: 14,
+                  width: 120,
+                  fontFamily: "monospace",
+                  outline: "none",
                 }}
               />
             </div>
@@ -312,20 +366,27 @@ export default function StrategiesPage() {
             style={{
               background: evaluating ? "#333" : "#e8ff47",
               color: evaluating ? "#666" : "#0a0a0a",
-              border: "none", borderRadius: 6, padding: "10px 24px",
-              fontSize: 14, fontWeight: 600,
+              border: "none",
+              borderRadius: 6,
+              padding: "10px 24px",
+              fontSize: 14,
+              fontWeight: 600,
               cursor: evaluating ? "not-allowed" : "pointer",
             }}
           >
             {evaluating ? (
-            <>
-              <span className="spinner" />
-              Running backtest
-              <span className="pulse-dots" style={{ marginLeft: 4 }}>
-                <span /><span /><span />
-              </span>
-            </>
-          ) : "Run Backtest"}
+              <>
+                <span className="spinner" />
+                Running backtest
+                <span className="pulse-dots" style={{ marginLeft: 4 }}>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </>
+            ) : (
+              "Run Backtest"
+            )}
           </button>
 
           {evalError && (
@@ -338,19 +399,55 @@ export default function StrategiesPage() {
       {result && (
         <section style={{ maxWidth: 720 }}>
           {/* Metric cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 32 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 12,
+              marginBottom: 32,
+            }}
+          >
             {[
-              { label: "Total Return", value: `${result.total_return_pct.toFixed(2)}%`, highlight: positive },
-              { label: "Sharpe Ratio", value: result.sharpe_ratio.toFixed(2), highlight: result.sharpe_ratio > 1 },
-              { label: "Max Drawdown", value: `${result.max_drawdown_pct.toFixed(2)}%`, highlight: false, negative: true },
-              { label: "Win Rate", value: `${result.win_rate.toFixed(1)}%`, highlight: result.win_rate > 50 },
+              {
+                label: "Total Return",
+                value: `${result.total_return_pct.toFixed(2)}%`,
+                highlight: positive,
+              },
+              {
+                label: "Sharpe Ratio",
+                value: result.sharpe_ratio.toFixed(2),
+                highlight: result.sharpe_ratio > 1,
+              },
+              {
+                label: "Max Drawdown",
+                value: `${result.max_drawdown_pct.toFixed(2)}%`,
+                highlight: false,
+                negative: true,
+              },
+              {
+                label: "Win Rate",
+                value: `${result.win_rate.toFixed(1)}%`,
+                highlight: result.win_rate > 50,
+              },
             ].map(({ label, value, highlight, negative }) => (
-              <div key={label} style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "16px 14px" }}>
+              <div
+                key={label}
+                style={{
+                  background: "#111",
+                  border: "1px solid #222",
+                  borderRadius: 8,
+                  padding: "16px 14px",
+                }}
+              >
                 <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>{label}</div>
-                <div style={{
-                  fontSize: 22, fontWeight: 700, fontFamily: "monospace",
-                  color: negative ? "#ff4747" : highlight ? "#e8ff47" : "#f5f5f5",
-                }}>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 700,
+                    fontFamily: "monospace",
+                    color: negative ? "#ff4747" : highlight ? "#e8ff47" : "#f5f5f5",
+                  }}
+                >
                   {value}
                 </div>
               </div>
@@ -358,7 +455,15 @@ export default function StrategiesPage() {
           </div>
 
           {/* Equity curve */}
-          <div style={{ background: "#111", border: "1px solid #222", borderRadius: 10, padding: 20, marginBottom: 24 }}>
+          <div
+            style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: 10,
+              padding: 20,
+              marginBottom: 24,
+            }}
+          >
             <div style={{ fontSize: 13, color: "#555", marginBottom: 12 }}>Equity Curve</div>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={equityData}>
@@ -371,7 +476,12 @@ export default function StrategiesPage() {
                 />
                 <Tooltip
                   formatter={(v: number) => [`$${v.toFixed(2)}`, "Equity"]}
-                  contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, fontSize: 12 }}
+                  contentStyle={{
+                    background: "#1a1a1a",
+                    border: "1px solid #333",
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
                   labelStyle={{ display: "none" }}
                 />
                 <Line
@@ -387,15 +497,40 @@ export default function StrategiesPage() {
 
           {/* Trade log */}
           {result.signals.length > 0 && (
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 10, padding: 20 }}>
+            <div
+              style={{
+                background: "#111",
+                border: "1px solid #222",
+                borderRadius: 10,
+                padding: 20,
+              }}
+            >
               <div style={{ fontSize: 13, color: "#555", marginBottom: 12 }}>
                 Trade Log — {result.total_trades} trades
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: "monospace" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                }}
+              >
                 <thead>
                   <tr>
                     {["Date", "Action", "Price", "P&L"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", color: "#444", fontWeight: 500, paddingBottom: 8, fontSize: 11 }}>{h}</th>
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: "left",
+                          color: "#444",
+                          fontWeight: 500,
+                          paddingBottom: 8,
+                          fontSize: 11,
+                        }}
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -403,11 +538,22 @@ export default function StrategiesPage() {
                   {result.signals.map((s, i) => (
                     <tr key={i} style={{ borderTop: "1px solid #1a1a1a" }}>
                       <td style={{ padding: "6px 0", color: "#666" }}>{s.date}</td>
-                      <td style={{ padding: "6px 0", color: s.action === "BUY" ? "#e8ff47" : "#ff9447", fontWeight: 600 }}>
+                      <td
+                        style={{
+                          padding: "6px 0",
+                          color: s.action === "BUY" ? "#e8ff47" : "#ff9447",
+                          fontWeight: 600,
+                        }}
+                      >
                         {s.action}
                       </td>
                       <td style={{ padding: "6px 0", color: "#f5f5f5" }}>${s.price.toFixed(2)}</td>
-                      <td style={{ padding: "6px 0", color: s.pnl == null ? "#444" : s.pnl >= 0 ? "#e8ff47" : "#ff4747" }}>
+                      <td
+                        style={{
+                          padding: "6px 0",
+                          color: s.pnl == null ? "#444" : s.pnl >= 0 ? "#e8ff47" : "#ff4747",
+                        }}
+                      >
                         {s.pnl != null ? `${s.pnl >= 0 ? "+" : ""}$${s.pnl.toFixed(2)}` : "—"}
                       </td>
                     </tr>

@@ -1,13 +1,14 @@
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import asyncpg
 import os
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from typing import Any
 
+import asyncpg
 from app.alpaca_client import alpaca_ok
 from app.strategies.router import router as strategies_router
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 DB_MIGRATIONS = """
 CREATE TABLE IF NOT EXISTS strategies (
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_url = os.getenv("DATABASE_URL")
     app.state.db_url = db_url
     try:
@@ -64,7 +65,7 @@ async def db_ok() -> bool:
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
     db = await db_ok()
     alpaca_connected, alpaca_error = alpaca_ok()
     return {
@@ -72,5 +73,5 @@ async def health():
         "db": "connected" if db else "disconnected",
         "alpaca": "connected" if alpaca_connected else "disconnected",
         "alpaca_error": alpaca_error,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }

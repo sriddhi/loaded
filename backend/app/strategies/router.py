@@ -1,12 +1,12 @@
 import json
 import logging
+from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Request
-
 from app.strategies.evaluator import evaluate_strategy
 from app.strategies.generator import generate_strategy
 from app.strategies.models import EvalRequest, EvalResult, GenerateRequest, StrategyConfig
+from fastapi import APIRouter, HTTPException, Request
 
 log = logging.getLogger(__name__)
 
@@ -22,17 +22,17 @@ async def get_db(request: Request) -> asyncpg.Connection:
 
 
 @router.post("/generate", response_model=StrategyConfig)
-async def generate(body: GenerateRequest):
+async def generate(body: GenerateRequest) -> StrategyConfig:
     try:
         return generate_strategy(body.natural_language_prompt)
     except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/evaluate", response_model=EvalResult)
-async def evaluate(body: EvalRequest):
+async def evaluate(body: EvalRequest) -> EvalResult:
     try:
         return evaluate_strategy(
             config=body.strategy_config,
@@ -41,17 +41,19 @@ async def evaluate(body: EvalRequest):
             initial_capital=body.initial_capital,
         )
     except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
         log.error(f"Evaluation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {e}") from e
 
 
 @router.get("/")
-async def list_strategies(request: Request):
+async def list_strategies(request: Request) -> list[dict[str, Any]]:
     conn = await asyncpg.connect(request.app.state.db_url)
     try:
-        rows = await conn.fetch("SELECT id, name, config_json, created_at FROM strategies ORDER BY created_at DESC")
+        rows = await conn.fetch(
+            "SELECT id, name, config_json, created_at FROM strategies ORDER BY created_at DESC"
+        )
         return [
             {
                 "id": r["id"],
@@ -66,7 +68,7 @@ async def list_strategies(request: Request):
 
 
 @router.post("/save")
-async def save_strategy(body: StrategyConfig, request: Request):
+async def save_strategy(body: StrategyConfig, request: Request) -> dict[str, Any]:
     conn = await asyncpg.connect(request.app.state.db_url)
     try:
         row = await conn.fetchrow(

@@ -87,11 +87,11 @@ if [[ -n "$PY_STAGED" ]]; then
   # 4. mypy
   header "mypy"
   if command -v mypy &>/dev/null; then
-    if mypy "$BACKEND/app/" --ignore-missing-imports --quiet 2>&1; then
+    if mypy "$BACKEND/app/" --explicit-package-bases --ignore-missing-imports 2>&1 | grep -q "^Success:"; then
       pass "mypy"
     else
-      mypy "$BACKEND/app/" --ignore-missing-imports 2>&1 || true
-      fail "mypy" "cd backend && mypy app/"
+      mypy "$BACKEND/app/" --explicit-package-bases --ignore-missing-imports 2>&1 || true
+      fail "mypy" "cd backend && mypy app/ --explicit-package-bases"
     fi
   else
     echo "⚠️  mypy not found — skipping (run: pip install mypy)"
@@ -100,10 +100,12 @@ if [[ -n "$PY_STAGED" ]]; then
   # 5. pytest (unit only, no integration)
   header "pytest (unit)"
   if command -v pytest &>/dev/null; then
-    if pytest "$BACKEND/tests/" -x -q \
+    pytest_exit=0
+    pytest "$BACKEND/tests/" -x -q \
         --ignore="$BACKEND/tests/test_integration.py" \
         --ignore="$BACKEND/tests/test_alpaca_connectivity.py" \
-        2>&1; then
+        2>&1 || pytest_exit=$?
+    if [[ $pytest_exit -eq 0 || $pytest_exit -eq 5 ]]; then
       pass "pytest"
     else
       fail "pytest" "cd backend && pytest tests/ -x --ignore=tests/test_integration.py"

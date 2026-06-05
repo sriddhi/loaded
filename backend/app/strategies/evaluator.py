@@ -1,14 +1,13 @@
 """
 Vectorized backtest engine. Evaluates a StrategyConfig against historical OHLCV data.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
-
 from app.strategies.models import EvalResult, StrategyConfig, TradeSignal
 
 log = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ def _generate_signals(df: pd.DataFrame, config: StrategyConfig) -> pd.Series:
         sma = close.rolling(period).mean()
         std = close.rolling(period).std()
         lower_band = sma - std_mult * std
-        upper_band = sma + std_mult * std
+        sma + std_mult * std
 
         # Entry: price below lower band (oversold)
         cross_up = (close < lower_band) & (close.shift(1) >= lower_band.shift(1))
@@ -101,7 +100,7 @@ def _run_backtest(
     df: pd.DataFrame,
     signals: pd.Series,
     initial_capital: float,
-) -> tuple[List[float], List[TradeSignal]]:
+) -> tuple[list[float], list[TradeSignal]]:
     """
     Simulate trades. Enter on next open after signal bar. No fractional shares, no shorting.
     Returns (equity_curve, trade_signals).
@@ -130,23 +129,27 @@ def _run_backtest(
                     position = shares
                     entry_price = open_price
                     equity -= shares * open_price
-                    trade_signals.append(TradeSignal(
-                        date=str(dates[i].date()),
-                        action="BUY",
-                        price=round(open_price, 4),
-                    ))
+                    trade_signals.append(
+                        TradeSignal(
+                            date=str(dates[i].date()),
+                            action="BUY",
+                            price=round(open_price, 4),
+                        )
+                    )
 
             elif prev_sig == -1 and position > 0:
                 # Sell
                 proceeds = position * open_price
                 pnl = round(proceeds - position * entry_price, 4)
                 equity += proceeds
-                trade_signals.append(TradeSignal(
-                    date=str(dates[i].date()),
-                    action="SELL",
-                    price=round(open_price, 4),
-                    pnl=pnl,
-                ))
+                trade_signals.append(
+                    TradeSignal(
+                        date=str(dates[i].date()),
+                        action="SELL",
+                        price=round(open_price, 4),
+                        pnl=pnl,
+                    )
+                )
                 position = 0
                 entry_price = 0.0
 
@@ -159,27 +162,32 @@ def _run_backtest(
         final_price = closes[-1]
         pnl = round(position * final_price - position * entry_price, 4)
         equity += position * final_price
-        trade_signals.append(TradeSignal(
-            date=str(dates[-1].date()),
-            action="SELL",
-            price=round(final_price, 4),
-            pnl=pnl,
-        ))
+        trade_signals.append(
+            TradeSignal(
+                date=str(dates[-1].date()),
+                action="SELL",
+                price=round(final_price, 4),
+                pnl=pnl,
+            )
+        )
         equity_curve[-1] = round(equity, 4)
 
     return equity_curve, trade_signals
 
 
 def _compute_metrics(
-    equity_curve: List[float],
-    trade_signals: List[TradeSignal],
+    equity_curve: list[float],
+    trade_signals: list[TradeSignal],
     initial_capital: float,
 ) -> dict:
     if not equity_curve:
-        return dict(
-            total_return_pct=0.0, sharpe_ratio=0.0,
-            max_drawdown_pct=0.0, win_rate=0.0, total_trades=0,
-        )
+        return {
+            "total_return_pct": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown_pct": 0.0,
+            "win_rate": 0.0,
+            "total_trades": 0,
+        }
 
     final_equity = equity_curve[-1]
     total_return_pct = round((final_equity - initial_capital) / initial_capital * 100, 4)
@@ -202,18 +210,18 @@ def _compute_metrics(
     sells = [s for s in trade_signals if s.action == "SELL" and s.pnl is not None]
     total_trades = len(sells)
     if total_trades > 0:
-        wins = sum(1 for s in sells if s.pnl > 0)
+        wins = sum(1 for s in sells if s.pnl is not None and s.pnl > 0)
         win_rate = round(wins / total_trades * 100, 4)
     else:
         win_rate = 0.0
 
-    return dict(
-        total_return_pct=total_return_pct,
-        sharpe_ratio=sharpe,
-        max_drawdown_pct=max_drawdown_pct,
-        win_rate=win_rate,
-        total_trades=total_trades,
-    )
+    return {
+        "total_return_pct": total_return_pct,
+        "sharpe_ratio": sharpe,
+        "max_drawdown_pct": max_drawdown_pct,
+        "win_rate": win_rate,
+        "total_trades": total_trades,
+    }
 
 
 def evaluate_strategy(
@@ -253,6 +261,6 @@ def evaluate_strategy(
         period=period,
         equity_curve=equity_curve,
         signals=trade_signals,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         **metrics,
     )

@@ -1,12 +1,12 @@
 """
 Uses Claude to generate a StrategyConfig from a natural language prompt.
 """
+
 import json
 import logging
 import os
 
 import anthropic
-
 from app.strategies.models import StrategyConfig
 
 log = logging.getLogger(__name__)
@@ -74,4 +74,6 @@ def generate_strategy(prompt: str) -> StrategyConfig:
     try:
         return StrategyConfig(**data)
     except Exception as e:
-        raise ValueError(f"Claude response did not match StrategyConfig schema: {e}\n\nData: {data}") from e
+        raise ValueError(
+            f"Claude response did not match StrategyConfig schema: {e}\n\nData: {data}"
+        ) from e
