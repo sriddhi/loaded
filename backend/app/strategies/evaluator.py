@@ -222,7 +222,11 @@ def evaluate_strategy(
     period: str,
     initial_capital: float,
 ) -> EvalResult:
-    df = _fetch_ohlcv(symbol, period)
+    try:
+        df = _fetch_ohlcv(symbol, period)
+    except Exception as e:
+        raise ValueError(f"Could not fetch market data for '{symbol}' ({period}): {e}") from e
+
     df = _apply_filters(df, config)
 
     if df.empty:
