@@ -32,9 +32,12 @@ Plan  →  Generator Prompt  →  Finalize + Lock  →  Build  →  Evaluator Pr
 **Triggered when:** user says *"run the robot"*.
 
 ```bash
-python scripts/robot.py                            # 3 iterations, target 9.0
+python scripts/robot.py                               # full project, 3 iterations, target 9.0
+python scripts/robot.py --module strategies           # only the strategies module
+python scripts/robot.py --module strategies --until 9.5
 python scripts/robot.py --iterations 10 --until 9.0
-python scripts/robot.py --dry-run                  # preview prompt only
+python scripts/robot.py --list-modules                # show available modules
+python scripts/robot.py --dry-run                     # preview prompt only
 ```
 
 The robot:
