@@ -35,6 +35,18 @@
       "sha256": "a37eaf6d472cf0d23fe8a0b07ed811c48599260f537491de268fb28d0c510c7d",
       "locked_at": "2026-06-06T00:04:02Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/alpaca/marketdata_generator.md",
+      "sha256": "e6560b830cbd7c80d590cc06421b7508f6dc69f8bd940bd33bc3db3392745e45",
+      "locked_at": "2026-06-06T00:55:51Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/alpaca/marketdata_evaluator.md",
+      "sha256": "8dd23731f6af87b1f1f51a9ec45c8e7325c4ece25d564563804c8656a040fbf4",
+      "locked_at": "2026-06-06T00:55:51Z",
+      "version": "1.0"
     }
   ]
 }
