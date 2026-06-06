@@ -1,13 +1,14 @@
 """
 Alpaca trading API endpoints.
 
-All endpoints support both paper and live accounts — controlled by ALPACA_PAPER_TRADE env var.
+All endpoints accept an optional `?account=real` query param.
+Default is paper — live requires explicit opt-in and configured real money credentials.
 """
 
 import logging
 from typing import Any
 
-from app.alpaca.client import alpaca_configured, get_trading_client, paper_trading_enabled
+from app.alpaca.client import alpaca_configured, get_trading_client
 from app.alpaca.models import (
     AccountInfo,
     MarketClock,
@@ -22,15 +23,21 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/alpaca", tags=["alpaca"])
 
-_NOT_CONFIGURED = HTTPException(status_code=503, detail="Alpaca credentials not configured")
+_ACCOUNT_PARAM = Query(default="paper", description="Account type: 'paper' (default) or 'real'")
 
 
-def _get_client() -> Any:
-    """Get trading client or raise 503."""
-    if not alpaca_configured():
-        raise _NOT_CONFIGURED
+def _is_paper(account: str) -> bool:
+    return account.lower() != "real"
+
+
+def _get_client(account: str) -> Any:
+    """Get trading client for the requested account type or raise 503."""
+    paper = _is_paper(account)
+    if not alpaca_configured(paper):
+        label = "paper" if paper else "real"
+        raise HTTPException(status_code=503, detail=f"Alpaca {label} credentials not configured")
     try:
-        return get_trading_client()
+        return get_trading_client(paper)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
@@ -46,8 +53,8 @@ def _api_error(e: Exception, not_found: bool = False) -> HTTPException:
 
 
 @router.get("/account", response_model=AccountInfo)
-async def get_account() -> AccountInfo:
-    client = _get_client()
+async def get_account(account: str = _ACCOUNT_PARAM) -> AccountInfo:
+    client = _get_client(account)
     try:
         acct = client.get_account()
     except Exception as e:
@@ -63,13 +70,13 @@ async def get_account() -> AccountInfo:
         trading_blocked=bool(acct.trading_blocked),
         account_blocked=bool(acct.account_blocked),
         trade_suspended_by_user=bool(acct.trade_suspended_by_user),
-        is_paper=paper_trading_enabled(),
+        is_paper=_is_paper(account),
     )
 
 
 @router.get("/account/clock", response_model=MarketClock)
-async def get_clock() -> MarketClock:
-    client = _get_client()
+async def get_clock(account: str = _ACCOUNT_PARAM) -> MarketClock:
+    client = _get_client(account)
     try:
         clock = client.get_clock()
     except Exception as e:
@@ -100,8 +107,8 @@ def _to_position(p: Any) -> Position:
 
 
 @router.get("/positions", response_model=list[Position])
-async def get_positions() -> list[Position]:
-    client = _get_client()
+async def get_positions(account: str = _ACCOUNT_PARAM) -> list[Position]:
+    client = _get_client(account)
     try:
         positions = client.get_all_positions()
     except Exception as e:
@@ -110,8 +117,8 @@ async def get_positions() -> list[Position]:
 
 
 @router.get("/positions/{symbol}", response_model=Position)
-async def get_position(symbol: str) -> Position:
-    client = _get_client()
+async def get_position(symbol: str, account: str = _ACCOUNT_PARAM) -> Position:
+    client = _get_client(account)
     try:
         p = client.get_open_position(symbol)
     except Exception as e:
@@ -120,8 +127,8 @@ async def get_position(symbol: str) -> Position:
 
 
 @router.delete("/positions/{symbol}")
-async def close_position(symbol: str) -> dict[str, Any]:
-    client = _get_client()
+async def close_position(symbol: str, account: str = _ACCOUNT_PARAM) -> dict[str, Any]:
+    client = _get_client(account)
     try:
         order = client.close_position(symbol)
     except Exception as e:
@@ -154,6 +161,7 @@ def _to_order(o: Any) -> Order:
 
 @router.get("/orders", response_model=list[Order])
 async def get_orders(
+    account: str = _ACCOUNT_PARAM,
     status: str = Query(default="open"),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[Order]:
@@ -166,7 +174,7 @@ async def get_orders(
         "all": QueryOrderStatus.ALL,
     }
     query_status = status_map.get(status, QueryOrderStatus.OPEN)
-    client = _get_client()
+    client = _get_client(account)
     try:
         orders = client.get_orders(filter=GetOrdersRequest(status=query_status, limit=limit))
     except Exception as e:
@@ -175,7 +183,7 @@ async def get_orders(
 
 
 @router.post("/orders", response_model=Order)
-async def place_order(body: OrderRequest) -> Order:
+async def place_order(body: OrderRequest, account: str = _ACCOUNT_PARAM) -> Order:
     if body.qty is not None and body.notional is not None:
         raise HTTPException(status_code=422, detail="Provide either qty or notional, not both")
     if body.qty is None and body.notional is None:
@@ -238,7 +246,7 @@ async def place_order(body: OrderRequest) -> Order:
         else:
             raise HTTPException(status_code=422, detail=f"Unknown order type: {body.type}")
 
-        client = _get_client()
+        client = _get_client(account)
         order = client.submit_order(req)
     except HTTPException:
         raise
@@ -249,8 +257,8 @@ async def place_order(body: OrderRequest) -> Order:
 
 
 @router.get("/orders/{order_id}", response_model=Order)
-async def get_order(order_id: str) -> Order:
-    client = _get_client()
+async def get_order(order_id: str, account: str = _ACCOUNT_PARAM) -> Order:
+    client = _get_client(account)
     try:
         order = client.get_order_by_id(order_id)
     except Exception as e:
@@ -259,8 +267,8 @@ async def get_order(order_id: str) -> Order:
 
 
 @router.delete("/orders/{order_id}")
-async def cancel_order(order_id: str) -> dict[str, str]:
-    client = _get_client()
+async def cancel_order(order_id: str, account: str = _ACCOUNT_PARAM) -> dict[str, str]:
+    client = _get_client(account)
     try:
         client.cancel_order_by_id(order_id)
     except Exception as e:
@@ -273,16 +281,16 @@ async def cancel_order(order_id: str) -> dict[str, str]:
 
 @router.get("/portfolio/history", response_model=PortfolioSnapshot)
 async def get_portfolio_history(
+    account: str = _ACCOUNT_PARAM,
     period: str = Query(default="1M"),
     timeframe: str = Query(default="1D"),
 ) -> PortfolioSnapshot:
     from alpaca.trading.requests import GetPortfolioHistoryRequest
 
-    # timeframe is a plain string: 1Min | 5Min | 15Min | 1H | 1D
     valid_timeframes = {"1Min", "5Min", "15Min", "1H", "1D"}
     tf = timeframe if timeframe in valid_timeframes else "1D"
 
-    client = _get_client()
+    client = _get_client(account)
     try:
         history = client.get_portfolio_history(
             filter=GetPortfolioHistoryRequest(period=period, timeframe=tf)

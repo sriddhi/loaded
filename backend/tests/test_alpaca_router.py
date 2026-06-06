@@ -342,3 +342,89 @@ def test_portfolio_history_custom_params(mock_configured, mock_get_client):
     resp = client.get("/alpaca/portfolio/history?period=1W&timeframe=1H")
     assert resp.status_code == 200
     assert resp.json()["timeframe"] == "1H"
+
+
+# ── account param routing tests ───────────────────────────────────────────────
+# These tests verify that the correct client (paper vs real money) is invoked,
+# not just that the response looks right.
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_no_account_param_calls_paper_client(mock_configured, mock_get_client):
+    """No ?account param → get_trading_client called with paper=True."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    client.get("/alpaca/account")
+    mock_get_client.assert_called_once_with(True)
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_account_paper_calls_paper_client(mock_configured, mock_get_client):
+    """?account=paper → get_trading_client called with paper=True."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    client.get("/alpaca/account?account=paper")
+    mock_get_client.assert_called_once_with(True)
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_account_live_calls_live_client(mock_configured, mock_get_client):
+    """?account=real → get_trading_client called with paper=False."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    client.get("/alpaca/account?account=real")
+    mock_get_client.assert_called_once_with(False)
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_no_account_param_is_paper_true_in_response(mock_configured, mock_get_client):
+    """No ?account param → is_paper=True in response body."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    resp = client.get("/alpaca/account")
+    assert resp.status_code == 200
+    assert resp.json()["is_paper"] is True
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_account_live_is_paper_false_in_response(mock_configured, mock_get_client):
+    """?account=real → is_paper=False in response body."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    resp = client.get("/alpaca/account?account=real")
+    assert resp.status_code == 200
+    assert resp.json()["is_paper"] is False
+
+
+@patch("app.alpaca.router.alpaca_configured", return_value=False)
+def test_account_live_not_configured_503(mock_configured):
+    """?account=real with no real money creds → 503 naming 'real'."""
+    resp = client.get("/alpaca/account?account=real")
+    assert resp.status_code == 503
+    assert "real" in resp.json()["detail"]
+
+
+@patch("app.alpaca.router.alpaca_configured", return_value=False)
+def test_account_paper_not_configured_503(mock_configured):
+    """No ?account param with no paper creds → 503 naming 'paper'."""
+    resp = client.get("/alpaca/account")
+    assert resp.status_code == 503
+    assert "paper" in resp.json()["detail"]
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_alpaca_configured_called_with_paper_true_by_default(mock_configured, mock_get_client):
+    """alpaca_configured is checked with paper=True when no ?account param."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    client.get("/alpaca/account")
+    mock_configured.assert_called_with(True)
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_alpaca_configured_called_with_paper_false_for_live(mock_configured, mock_get_client):
+    """alpaca_configured is checked with paper=False when ?account=real."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    client.get("/alpaca/account?account=real")
+    mock_configured.assert_called_with(False)
