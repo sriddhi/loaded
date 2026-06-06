@@ -42,23 +42,29 @@ def get_stock_client() -> StockHistoricalDataClient:
 
 
 def get_screener_client() -> ScreenerClient:
-    """Return ScreenerClient for movers/actives. Authenticated if keys present."""
+    """Return ScreenerClient for movers/actives. Requires API keys."""
     if not _ALPACA_DATA_AVAILABLE:
         raise RuntimeError("alpaca-py package is not installed")
     api_key, secret_key = _get_keys()
-    if api_key and secret_key:
-        return ScreenerClient(api_key, secret_key)
-    return ScreenerClient()
+    if not api_key or not secret_key:
+        raise RuntimeError(
+            "Alpaca API keys are required for market movers/actives. "
+            "Set ALPACA_PAPER_API_KEY and ALPACA_PAPER_SECRET_KEY in your .env"
+        )
+    return ScreenerClient(api_key, secret_key)
 
 
 def get_news_client() -> NewsClient:
-    """Return NewsClient. Authenticated if keys present, else free tier."""
+    """Return NewsClient. Requires API keys — news feed is not available unauthenticated."""
     if not _ALPACA_DATA_AVAILABLE:
         raise RuntimeError("alpaca-py package is not installed")
     api_key, secret_key = _get_keys()
-    if api_key and secret_key:
-        return NewsClient(api_key, secret_key)
-    return NewsClient()
+    if not api_key or not secret_key:
+        raise RuntimeError(
+            "Alpaca API keys are required for the news feed. "
+            "Set ALPACA_PAPER_API_KEY and ALPACA_PAPER_SECRET_KEY in your .env"
+        )
+    return NewsClient(api_key, secret_key)
 
 
 def get_option_client() -> OptionHistoricalDataClient:
