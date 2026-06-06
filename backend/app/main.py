@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
+from app.alpaca.router import router as alpaca_router
 from app.alpaca_client import alpaca_ok
 from app.strategies.router import router as strategies_router
 from fastapi import FastAPI
@@ -52,6 +53,7 @@ app.add_middleware(
 )
 
 app.include_router(strategies_router)
+app.include_router(alpaca_router)
 
 
 async def db_ok() -> bool:

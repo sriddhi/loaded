@@ -23,6 +23,18 @@
       "sha256": "03479d4b4f2c4ec07ff3c0368a99ca1021333d0b9f358c2aaba047cd2e7191af",
       "locked_at": "2026-06-05T21:55:44Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/alpaca/trading_generator.md",
+      "sha256": "4880fbef5cf1acc1c9af9133e2d2f1a61474eca8c5dea19ac955cbe5b818bf30",
+      "locked_at": "2026-06-06T00:04:02Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/alpaca/trading_evaluator.md",
+      "sha256": "a37eaf6d472cf0d23fe8a0b07ed811c48599260f537491de268fb28d0c510c7d",
+      "locked_at": "2026-06-06T00:04:02Z",
+      "version": "1.0"
     }
   ]
 }
