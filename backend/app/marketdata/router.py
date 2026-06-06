@@ -49,6 +49,8 @@ def _require_data() -> None:
 
 
 def _data_error(e: Exception) -> HTTPException:
+    if isinstance(e, RuntimeError):
+        return HTTPException(status_code=503, detail=str(e))
     return HTTPException(status_code=502, detail=str(e))
 
 
@@ -167,8 +169,8 @@ async def get_movers(top: int = Query(default=10, ge=1, le=50)) -> MarketMovers:
     from alpaca.data.enums import MarketType
     from alpaca.data.requests import MarketMoversRequest
 
-    client = get_screener_client()
     try:
+        client = get_screener_client()
         result = client.get_market_movers(
             MarketMoversRequest(market_type=MarketType.STOCKS, top=top)
         )
@@ -199,8 +201,8 @@ async def get_active(
     from alpaca.data.requests import MostActivesRequest
 
     by_enum = MostActivesBy.TRADES if by == "trades" else MostActivesBy.VOLUME
-    client = get_screener_client()
     try:
+        client = get_screener_client()
         result = client.get_most_actives(MostActivesRequest(top=top, by=by_enum))
     except Exception as e:
         raise _data_error(e) from e
@@ -230,8 +232,8 @@ async def get_news(
     # NewsRequest.symbols expects a comma-separated string, not a list
     # NewsRequest.symbols expects a comma-separated string, not a list
     symbols_str = ",".join(s.strip().upper() for s in symbols.split(",")) if symbols else None
-    client = get_news_client()
     try:
+        client = get_news_client()
         kwargs: dict[str, Any] = {"limit": limit}
         if symbols_str:
             kwargs["symbols"] = symbols_str
@@ -243,20 +245,34 @@ async def get_news(
     except Exception as e:
         raise _data_error(e) from e
 
-    items: list[Any] = list(raw) if not isinstance(raw, list) else raw
+    # NewsSet iterates as (key, value) tuples where value is a dict with a 'news' key
+    # containing a list of News model objects (attribute access, not dict access)
+    news_items_raw: list[Any] = []
+    for item in raw:
+        if isinstance(item, tuple) and len(item) == 2:
+            _, val = item
+            if isinstance(val, dict) and "news" in val:
+                news_items_raw.extend(val["news"])
+        else:
+            news_items_raw.append(item)
+
+    def _str_or_none(obj: Any, attr: str) -> str | None:
+        v = getattr(obj, attr, None)
+        return str(v) if v is not None else None
+
     return [
         NewsItem(
             id=int(n.id),
             headline=str(n.headline),
-            summary=str(n.summary) if getattr(n, "summary", None) is not None else None,
-            url=str(n.url) if getattr(n, "url", None) is not None else None,
-            source=str(n.source) if getattr(n, "source", None) is not None else None,
-            author=str(n.author) if getattr(n, "author", None) is not None else None,
+            summary=_str_or_none(n, "summary"),
+            url=_str_or_none(n, "url"),
+            source=_str_or_none(n, "source"),
+            author=_str_or_none(n, "author"),
             created_at=str(n.created_at),
             updated_at=str(n.updated_at),
             symbols=[str(sym) for sym in (getattr(n, "symbols", None) or [])],
         )
-        for n in items
+        for n in news_items_raw
     ]
 
 
