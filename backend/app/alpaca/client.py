@@ -1,7 +1,7 @@
 """
 Alpaca TradingClient factory.
 
-Supports both paper and live accounts via per-request `paper` flag.
+Supports both paper and real money accounts via per-request `paper` flag.
 Paper is always the default — live requires explicit opt-in.
 """
 
@@ -19,14 +19,14 @@ def alpaca_configured(paper: bool = True) -> bool:
     """Return True if the credentials for the requested account type are set."""
     if paper:
         return bool(os.getenv("ALPACA_PAPER_API_KEY") and os.getenv("ALPACA_PAPER_SECRET_KEY"))
-    return bool(os.getenv("ALPACA_LIVE_API_KEY") and os.getenv("ALPACA_LIVE_SECRET_KEY"))
+    return bool(os.getenv("ALPACA_REAL_API_KEY") and os.getenv("ALPACA_REAL_SECRET_KEY"))
 
 
 def get_trading_client(paper: bool = True) -> "TradingClient":
     """Return a configured TradingClient for the requested account type.
 
     Args:
-        paper: True → paper account (default), False → live account.
+        paper: True → paper account (default), False → real money account.
 
     Raises:
         RuntimeError: if alpaca-py is not installed or credentials are missing.
@@ -39,10 +39,10 @@ def get_trading_client(paper: bool = True) -> "TradingClient":
         if not api_key or not secret_key:
             raise RuntimeError("Alpaca paper credentials not configured")
     else:
-        api_key = os.getenv("ALPACA_LIVE_API_KEY")
-        secret_key = os.getenv("ALPACA_LIVE_SECRET_KEY")
+        api_key = os.getenv("ALPACA_REAL_API_KEY")
+        secret_key = os.getenv("ALPACA_REAL_SECRET_KEY")
         if not api_key or not secret_key:
-            raise RuntimeError("Alpaca live credentials not configured")
+            raise RuntimeError("Alpaca real money credentials not configured")
     return TradingClient(api_key, secret_key, paper=paper)
 
 

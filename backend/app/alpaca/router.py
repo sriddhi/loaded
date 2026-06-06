@@ -1,8 +1,8 @@
 """
 Alpaca trading API endpoints.
 
-All endpoints accept an optional `?account=live` query param.
-Default is paper — live requires explicit opt-in and configured live credentials.
+All endpoints accept an optional `?account=real` query param.
+Default is paper — live requires explicit opt-in and configured real money credentials.
 """
 
 import logging
@@ -23,18 +23,18 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/alpaca", tags=["alpaca"])
 
-_ACCOUNT_PARAM = Query(default="paper", description="Account type: 'paper' (default) or 'live'")
+_ACCOUNT_PARAM = Query(default="paper", description="Account type: 'paper' (default) or 'real'")
 
 
 def _is_paper(account: str) -> bool:
-    return account.lower() != "live"
+    return account.lower() != "real"
 
 
 def _get_client(account: str) -> Any:
     """Get trading client for the requested account type or raise 503."""
     paper = _is_paper(account)
     if not alpaca_configured(paper):
-        label = "paper" if paper else "live"
+        label = "paper" if paper else "real"
         raise HTTPException(status_code=503, detail=f"Alpaca {label} credentials not configured")
     try:
         return get_trading_client(paper)

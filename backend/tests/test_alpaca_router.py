@@ -345,7 +345,7 @@ def test_portfolio_history_custom_params(mock_configured, mock_get_client):
 
 
 # ── account param routing tests ───────────────────────────────────────────────
-# These tests verify that the correct client (paper vs live) is invoked,
+# These tests verify that the correct client (paper vs real money) is invoked,
 # not just that the response looks right.
 
 
@@ -370,9 +370,9 @@ def test_account_paper_calls_paper_client(mock_configured, mock_get_client):
 @patch("app.alpaca.router.get_trading_client")
 @patch("app.alpaca.router.alpaca_configured", return_value=True)
 def test_account_live_calls_live_client(mock_configured, mock_get_client):
-    """?account=live → get_trading_client called with paper=False."""
+    """?account=real → get_trading_client called with paper=False."""
     mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
-    client.get("/alpaca/account?account=live")
+    client.get("/alpaca/account?account=real")
     mock_get_client.assert_called_once_with(False)
 
 
@@ -389,19 +389,19 @@ def test_no_account_param_is_paper_true_in_response(mock_configured, mock_get_cl
 @patch("app.alpaca.router.get_trading_client")
 @patch("app.alpaca.router.alpaca_configured", return_value=True)
 def test_account_live_is_paper_false_in_response(mock_configured, mock_get_client):
-    """?account=live → is_paper=False in response body."""
+    """?account=real → is_paper=False in response body."""
     mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
-    resp = client.get("/alpaca/account?account=live")
+    resp = client.get("/alpaca/account?account=real")
     assert resp.status_code == 200
     assert resp.json()["is_paper"] is False
 
 
 @patch("app.alpaca.router.alpaca_configured", return_value=False)
 def test_account_live_not_configured_503(mock_configured):
-    """?account=live with no live creds → 503 naming 'live'."""
-    resp = client.get("/alpaca/account?account=live")
+    """?account=real with no real money creds → 503 naming 'real'."""
+    resp = client.get("/alpaca/account?account=real")
     assert resp.status_code == 503
-    assert "live" in resp.json()["detail"]
+    assert "real" in resp.json()["detail"]
 
 
 @patch("app.alpaca.router.alpaca_configured", return_value=False)
@@ -424,7 +424,7 @@ def test_alpaca_configured_called_with_paper_true_by_default(mock_configured, mo
 @patch("app.alpaca.router.get_trading_client")
 @patch("app.alpaca.router.alpaca_configured", return_value=True)
 def test_alpaca_configured_called_with_paper_false_for_live(mock_configured, mock_get_client):
-    """alpaca_configured is checked with paper=False when ?account=live."""
+    """alpaca_configured is checked with paper=False when ?account=real."""
     mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
-    client.get("/alpaca/account?account=live")
+    client.get("/alpaca/account?account=real")
     mock_configured.assert_called_with(False)

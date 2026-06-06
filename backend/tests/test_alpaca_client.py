@@ -33,7 +33,7 @@ def test_alpaca_configured_live_false_when_missing():
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in ("ALPACA_LIVE_API_KEY", "ALPACA_LIVE_SECRET_KEY")
+        if k not in ("ALPACA_REAL_API_KEY", "ALPACA_REAL_SECRET_KEY")
     }
     with patch.dict(os.environ, env, clear=True):
         from app.alpaca.client import alpaca_configured
@@ -43,7 +43,7 @@ def test_alpaca_configured_live_false_when_missing():
 
 def test_alpaca_configured_live_true_when_set():
     with patch.dict(
-        os.environ, {"ALPACA_LIVE_API_KEY": "lkey", "ALPACA_LIVE_SECRET_KEY": "lsecret"}
+        os.environ, {"ALPACA_REAL_API_KEY": "lkey", "ALPACA_REAL_SECRET_KEY": "lsecret"}
     ):
         from app.alpaca.client import alpaca_configured
 
@@ -78,7 +78,7 @@ def test_get_trading_client_raises_when_no_live_credentials():
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in ("ALPACA_LIVE_API_KEY", "ALPACA_LIVE_SECRET_KEY")
+        if k not in ("ALPACA_REAL_API_KEY", "ALPACA_REAL_SECRET_KEY")
     }
     with (
         patch.dict(os.environ, env, clear=True),
@@ -86,5 +86,5 @@ def test_get_trading_client_raises_when_no_live_credentials():
     ):
         from app.alpaca.client import get_trading_client
 
-        with pytest.raises(RuntimeError, match="live credentials not configured"):
+        with pytest.raises(RuntimeError, match="real money credentials not configured"):
             get_trading_client(paper=False)
