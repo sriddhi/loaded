@@ -101,11 +101,15 @@ app = FastAPI(title="Loaded API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(DocsAuthMiddleware)
 
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+_allow_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allow_origins,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=True,
 )
 
 # ── Rate limiter ───────────────────────────────────────────────────────────────
