@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "alpaca": {
+      "command": "./scripts/run_alpaca_mcp.sh",
+      "args": [],
+      "env": {
+        "ALPACA_PAPER_TRADE": "true"
+      }
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "note": "Run: claude mcp add --transport http linear https://mcp.linear.app/mcp  (OAuth flow opens in browser)"
+    }
+  }
+}
