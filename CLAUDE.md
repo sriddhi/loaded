@@ -66,6 +66,57 @@ It loops until overall score ≥ target or max iterations reached. Do not interr
 
 ---
 
+## Engineer Onboarding
+
+New to the team? One command gets you fully set up:
+
+```bash
+./scripts/setup_dev.sh
+```
+
+This script:
+1. Creates `.env` from `.env.example`
+2. Sets up the Python virtualenv + installs all backend dependencies
+3. Installs pre-commit hooks (ruff, mypy, pytest — same as CI)
+4. Registers **Alpaca MCP** in Claude Code (market data + trading tools available as `/` commands)
+5. Registers **Linear MCP** in Claude Code (issue tracking — OAuth browser flow opens once)
+6. Builds Docker images on first boot
+
+After running, fill in your API keys in `.env` (get them from the team lead), then:
+
+```bash
+docker compose up -d
+# → Frontend: http://localhost:3000
+# → Backend API: http://localhost:8000
+```
+
+### Developer Tools Included
+
+| Tool | Purpose | How it loads |
+|---|---|---|
+| **Claude Code** | AI pair programmer, knows this codebase | `.claude/settings.json` + `.claude/mcp.json` |
+| **Alpaca MCP** | Live market data + trading tools in Claude | Auto-registered by `setup_dev.sh` |
+| **Linear MCP** | Issue tracking in Claude (read + create issues) | Auth once in browser via `setup_dev.sh` |
+| **Cursor** | IDE with Alpaca MCP pre-wired | `.cursor/mcp.json` (auto-detected) |
+| **Pre-commit** | Runs ruff, mypy, pytest before every commit | Installed by `setup_dev.sh` |
+
+### MCP Tools Available After Setup
+
+Once registered, Claude Code can:
+- Pull your **Linear issues** and create new ones directly from the conversation
+- Query **live market data** via Alpaca (quotes, positions, orders, news)
+- Place **paper trades** for strategy testing
+
+### Getting API Keys
+
+Contact the team lead for:
+- `JWT_SECRET_KEY` — generate your own: `openssl rand -hex 32`
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — ask team lead for your account
+- `ANTHROPIC_API_KEY` — from [console.anthropic.com](https://console.anthropic.com)
+- `ALPACA_PAPER_API_KEY` / `ALPACA_PAPER_SECRET_KEY` — from [app.alpaca.markets/paper](https://app.alpaca.markets/paper/dashboard/overview)
+
+---
+
 ## What is Loaded
 
 Loaded is the enterprise-grade evolution of the Vertex trading strategy POC. It is a dockerized full-stack web application targeting both GenZ traders and seasoned professionals — minimal, clean, data-first design.

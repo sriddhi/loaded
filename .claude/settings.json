@@ -1,3 +1,36 @@
 {
-  "model": "claude-opus-4-5"
+  "model": "claude-opus-4-5",
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(docker compose build *)",
+      "Bash(docker compose up *)",
+      "Bash(docker compose down*)",
+      "Bash(docker compose logs *)",
+      "Bash(docker compose exec *)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git checkout*)",
+      "Bash(git pull*)",
+      "Bash(git branch*)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(cd backend && pytest*)",
+      "Bash(cd backend && python*)",
+      "Bash(./scripts/*)",
+      "Bash(python3 scripts/*)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(find . *)",
+      "Bash(curl *)"
+    ]
+  },
+  "env": {
+    "ANTHROPIC_MODEL": "claude-opus-4-5"
+  }
 }
