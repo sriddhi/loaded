@@ -7,6 +7,7 @@ from typing import Any
 import asyncpg
 from app.alpaca.router import router as alpaca_router
 from app.alpaca_client import alpaca_ok
+from app.marketdata.router import router as marketdata_router
 from app.strategies.router import router as strategies_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,6 +55,7 @@ app.add_middleware(
 
 app.include_router(strategies_router)
 app.include_router(alpaca_router)
+app.include_router(marketdata_router)
 
 
 async def db_ok() -> bool:
