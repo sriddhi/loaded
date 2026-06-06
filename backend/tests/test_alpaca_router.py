@@ -342,3 +342,34 @@ def test_portfolio_history_custom_params(mock_configured, mock_get_client):
     resp = client.get("/alpaca/portfolio/history?period=1W&timeframe=1H")
     assert resp.status_code == 200
     assert resp.json()["timeframe"] == "1H"
+
+
+# ── account param tests ───────────────────────────────────────────────────────
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_get_account_default_is_paper(mock_configured, mock_get_client):
+    """No ?account param → is_paper=True in response."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    resp = client.get("/alpaca/account")
+    assert resp.status_code == 200
+    assert resp.json()["is_paper"] is True
+
+
+@patch("app.alpaca.router.get_trading_client")
+@patch("app.alpaca.router.alpaca_configured", return_value=True)
+def test_get_account_live_sets_is_paper_false(mock_configured, mock_get_client):
+    """?account=live → is_paper=False in response."""
+    mock_get_client.return_value = _mock_client(acct=MOCK_ACCOUNT)
+    resp = client.get("/alpaca/account?account=live")
+    assert resp.status_code == 200
+    assert resp.json()["is_paper"] is False
+
+
+@patch("app.alpaca.router.alpaca_configured", return_value=False)
+def test_get_account_live_not_configured(mock_configured):
+    """?account=live with no live creds → 503 mentioning 'live'."""
+    resp = client.get("/alpaca/account?account=live")
+    assert resp.status_code == 503
+    assert "live" in resp.json()["detail"]
