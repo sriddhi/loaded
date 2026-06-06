@@ -47,6 +47,18 @@
       "sha256": "8dd23731f6af87b1f1f51a9ec45c8e7325c4ece25d564563804c8656a040fbf4",
       "locked_at": "2026-06-06T00:55:51Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/auth/auth_generator.md",
+      "sha256": "73f7398922e5af8170ad5fcf9a50af741f470934ca78248633135ffbb504e70f",
+      "locked_at": "2026-06-06T01:44:46Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/auth/auth_evaluator.md",
+      "sha256": "3f496db4dd5b4f0f022bfc5e7821c077c5d629b47e32f15ff63c9eb92a93dee1",
+      "locked_at": "2026-06-06T01:44:46Z",
+      "version": "1.0"
     }
   ]
 }

@@ -4,7 +4,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]
+ignore = ["E501", "B008"]  # B008: Depends() in FastAPI signatures is the framework pattern
 
 [tool.ruff.format]
 quote-style = "double"
@@ -17,6 +17,7 @@ ignore_missing_imports = true
 disallow_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
+explicit_package_bases = true
 exclude = ["backend/tests/"]
 
 [tool.pytest.ini_options]
