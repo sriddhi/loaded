@@ -1,4 +1,5 @@
 import HeartbeatDot from "@/components/HeartbeatDot";
+import UserBadge from "@/components/UserBadge";
 
 export default function Home() {
   return (
@@ -11,8 +12,12 @@ export default function Home() {
         justifyContent: "center",
         gap: "12px",
         userSelect: "none",
+        position: "relative",
       }}
     >
+      {/* User badge — top right */}
+      <UserBadge />
+
       {/* Wordmark */}
       <h1
         style={{
