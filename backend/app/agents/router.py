@@ -197,31 +197,38 @@ async def search_equities(q: str, request: Request) -> list[SearchResult]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
+def _cents_to_dollars(value: int | None) -> float | None:
+    """Money is stored as integer cents; the API contract is US dollars."""
+    if value is None:
+        return None
+    return round(value / 100, 2)
+
+
 def _row_to_period(row: asyncpg.Record) -> FundamentalPeriod:
     return FundamentalPeriod(
         period_type=row["period_type"],
         period_end=row["period_end"],
         fiscal_year=row["fiscal_year"],
         fiscal_quarter=row["fiscal_quarter"],
-        revenue=row["revenue"],
-        gross_profit=row["gross_profit"],
-        operating_income=row["operating_income"],
-        net_income=row["net_income"],
-        ebitda=row["ebitda"],
+        revenue=_cents_to_dollars(row["revenue"]),
+        gross_profit=_cents_to_dollars(row["gross_profit"]),
+        operating_income=_cents_to_dollars(row["operating_income"]),
+        net_income=_cents_to_dollars(row["net_income"]),
+        ebitda=_cents_to_dollars(row["ebitda"]),
         eps_basic=row["eps_basic"],
         eps_diluted=row["eps_diluted"],
         shares_basic=row["shares_basic"],
         shares_diluted=row["shares_diluted"],
-        cash_and_equiv=row["cash_and_equiv"],
-        total_assets=row["total_assets"],
-        total_liabilities=row["total_liabilities"],
-        total_equity=row["total_equity"],
-        total_debt=row["total_debt"],
-        net_debt=row["net_debt"],
-        operating_cash_flow=row["operating_cash_flow"],
-        capex=row["capex"],
-        free_cash_flow=row["free_cash_flow"],
-        dividends_paid=row["dividends_paid"],
+        cash_and_equiv=_cents_to_dollars(row["cash_and_equiv"]),
+        total_assets=_cents_to_dollars(row["total_assets"]),
+        total_liabilities=_cents_to_dollars(row["total_liabilities"]),
+        total_equity=_cents_to_dollars(row["total_equity"]),
+        total_debt=_cents_to_dollars(row["total_debt"]),
+        net_debt=_cents_to_dollars(row["net_debt"]),
+        operating_cash_flow=_cents_to_dollars(row["operating_cash_flow"]),
+        capex=_cents_to_dollars(row["capex"]),
+        free_cash_flow=_cents_to_dollars(row["free_cash_flow"]),
+        dividends_paid=_cents_to_dollars(row["dividends_paid"]),
         gross_margin=float(row["gross_margin"]) if row["gross_margin"] is not None else None,
         operating_margin=float(row["operating_margin"])
         if row["operating_margin"] is not None
@@ -236,7 +243,7 @@ def _row_to_period(row: asyncpg.Record) -> FundamentalPeriod:
         else None,
         eps_growth_yoy=float(row["eps_growth_yoy"]) if row["eps_growth_yoy"] is not None else None,
         price_at_fetch=float(row["price_at_fetch"]) if row["price_at_fetch"] is not None else None,
-        market_cap=row["market_cap"],
+        market_cap=_cents_to_dollars(row["market_cap"]),
         pe_ratio=float(row["pe_ratio"]) if row["pe_ratio"] is not None else None,
         pb_ratio=float(row["pb_ratio"]) if row["pb_ratio"] is not None else None,
         ps_ratio=float(row["ps_ratio"]) if row["ps_ratio"] is not None else None,
@@ -279,6 +286,6 @@ def _row_to_analyst(row: asyncpg.Record) -> AnalystData:
         earnings_est_next_q=float(row["earnings_est_next_q"])
         if row["earnings_est_next_q"] is not None
         else None,
-        revenue_est_next_q=row["revenue_est_next_q"],
+        revenue_est_next_q=_cents_to_dollars(row["revenue_est_next_q"]),
         fetched_at=row["fetched_at"],
     )

@@ -20,28 +20,28 @@ class FundamentalPeriod(BaseModel):
     period_end: date
     fiscal_year: int | None
     fiscal_quarter: int | None
-    # Income statement (integer cents)
-    revenue: int | None
-    gross_profit: int | None
-    operating_income: int | None
-    net_income: int | None
-    ebitda: int | None
+    # Income statement (US dollars; stored internally as integer cents)
+    revenue: float | None
+    gross_profit: float | None
+    operating_income: float | None
+    net_income: float | None
+    ebitda: float | None
     eps_basic: float | None
     eps_diluted: float | None
     shares_basic: int | None
     shares_diluted: int | None
-    # Balance sheet
-    cash_and_equiv: int | None
-    total_assets: int | None
-    total_liabilities: int | None
-    total_equity: int | None
-    total_debt: int | None
-    net_debt: int | None
-    # Cash flow
-    operating_cash_flow: int | None
-    capex: int | None
-    free_cash_flow: int | None
-    dividends_paid: int | None
+    # Balance sheet (US dollars)
+    cash_and_equiv: float | None
+    total_assets: float | None
+    total_liabilities: float | None
+    total_equity: float | None
+    total_debt: float | None
+    net_debt: float | None
+    # Cash flow (US dollars)
+    operating_cash_flow: float | None
+    capex: float | None
+    free_cash_flow: float | None
+    dividends_paid: float | None
     # Ratios
     gross_margin: float | None
     operating_margin: float | None
@@ -54,7 +54,7 @@ class FundamentalPeriod(BaseModel):
     eps_growth_yoy: float | None
     # Valuation snapshot
     price_at_fetch: float | None
-    market_cap: int | None
+    market_cap: float | None  # US dollars (stored internally as integer cents)
     pe_ratio: float | None
     pb_ratio: float | None
     ps_ratio: float | None
@@ -85,7 +85,7 @@ class AnalystData(BaseModel):
     recommendation: str | None
     num_analysts: int | None
     earnings_est_next_q: float | None
-    revenue_est_next_q: int | None
+    revenue_est_next_q: float | None  # US dollars (stored internally as integer cents)
     fetched_at: datetime | None
 
 
