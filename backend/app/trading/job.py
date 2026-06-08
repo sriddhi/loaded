@@ -387,7 +387,19 @@ class TradingJob:
                     params=params,
                 )
             if resp.status_code == 200:
-                return list(resp.json().get("bars", []))
+                raw = resp.json().get("bars", [])
+                # Alpaca returns short keys: t, o, h, l, c, v — normalize to long form
+                return [
+                    {
+                        "time": b.get("t", ""),
+                        "open": b.get("o", b.get("open", 0)),
+                        "high": b.get("h", b.get("high", 0)),
+                        "low": b.get("l", b.get("low", 0)),
+                        "close": b.get("c", b.get("close", 0)),
+                        "volume": b.get("v", b.get("volume", 0)),
+                    }
+                    for b in raw
+                ]
         except Exception as exc:
             log_error(f"fetch_spy_bars: {exc}")
         return []
