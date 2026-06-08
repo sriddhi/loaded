@@ -13,6 +13,7 @@ from app.auth.router import router as auth_router
 from app.auth.security import get_current_user
 from app.marketdata.router import router as marketdata_router
 from app.strategies.router import router as strategies_router
+from app.trading.router import router as trading_router
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -405,6 +406,7 @@ app.include_router(strategies_router, dependencies=_auth_dep)
 app.include_router(alpaca_router, dependencies=_auth_dep)
 app.include_router(marketdata_router, dependencies=_auth_dep)
 app.include_router(agents_router, prefix="/agents", dependencies=_auth_dep)
+app.include_router(trading_router, prefix="/trading", dependencies=_auth_dep)
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────

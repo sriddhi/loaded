@@ -71,6 +71,18 @@
       "sha256": "02dac9bdb5ad8b41bb1f6443474305c1ea7fcb7d2b3973c513e578eaee22c98a",
       "locked_at": "2026-06-08T04:02:33Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/trading/spy_0dte_generator.md",
+      "sha256": "6af271a78ce67fbeb22162318ef18f90d26b38d0aa3a3042a159c70f509e3f0f",
+      "locked_at": "2026-06-08T14:06:55Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/trading/spy_0dte_evaluator.md",
+      "sha256": "3af8fdb4bec0d35e8107912e299081d022d6653c3e83b5ab894ce59002ead256",
+      "locked_at": "2026-06-08T14:06:55Z",
+      "version": "1.0"
     }
   ]
 }
