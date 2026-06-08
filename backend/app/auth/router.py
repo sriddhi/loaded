@@ -56,7 +56,7 @@ OAUTH_STATE_COOKIE = "oauth_state"
 
 
 def _frontend_url() -> str:
-    return os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    return os.getenv("FRONTEND_URL", "http://localhost:4000").rstrip("/")
 
 
 def _google_client_id() -> str:

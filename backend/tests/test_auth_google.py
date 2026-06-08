@@ -20,8 +20,8 @@ os.environ.setdefault(
 # strings, so setdefault would leave them blank and the endpoints would 503.
 os.environ["GOOGLE_CLIENT_ID"] = "test-client-id"
 os.environ["GOOGLE_CLIENT_SECRET"] = "test-client-secret"
-os.environ["GOOGLE_REDIRECT_URI"] = "http://localhost:3000/api/auth/google/callback"
-os.environ["FRONTEND_URL"] = "http://localhost:3000"
+os.environ["GOOGLE_REDIRECT_URI"] = "http://localhost:4000/api/auth/google/callback"
+os.environ["FRONTEND_URL"] = "http://localhost:4000"
 
 import app.auth.router  # noqa: E402, F401
 from app.auth.security import create_access_token, create_refresh_token  # noqa: E402
@@ -133,7 +133,7 @@ def test_callback_new_user_created_and_cookies_set():
     ):
         resp = client.get("/auth/google/callback?code=abc&state=s1", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "http://localhost:3000"
+    assert resp.headers["location"] == "http://localhost:4000"
     assert "access_token" in resp.cookies
     # OAuth users are always created as 'client'
     assert mock_create.call_args.kwargs.get("role", "client") == "client"

@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-BASE="http://localhost:8000"
+BASE="http://localhost:9000"
 PASS=0
 FAIL=0
 
