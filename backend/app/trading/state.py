@@ -41,7 +41,9 @@ class TradingState:
     last_tick_at: datetime | None
     signal_streak: dict[str, int]  # {"CALL": 0, "PUT": 0}
     errors: list[str]  # last 10 errors
-    trade_log: list[dict]  # last 100 trade events
+    trade_log: list[dict]  # last 100 trade events (in-memory fast read)
+    job_id: int | None  # FK → trading_jobs.id
+    session_id: int | None  # FK → trading_sessions.id
 
 
 def _fresh_state() -> TradingState:
@@ -56,6 +58,8 @@ def _fresh_state() -> TradingState:
         signal_streak={"CALL": 0, "PUT": 0},
         errors=[],
         trade_log=[],
+        job_id=None,
+        session_id=None,
     )
 
 
@@ -76,6 +80,8 @@ def reset_state() -> None:
     trading_state.signal_streak = fresh.signal_streak
     trading_state.errors = fresh.errors
     trading_state.trade_log = fresh.trade_log
+    trading_state.job_id = fresh.job_id
+    trading_state.session_id = fresh.session_id
 
 
 def log_event(

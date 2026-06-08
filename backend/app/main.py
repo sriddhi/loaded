@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -280,6 +281,60 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     finished_at  TIMESTAMPTZ
 );
 
+-- ── Trading Job Registry ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS trading_jobs (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    strategy    TEXT NOT NULL,
+    job_type    TEXT NOT NULL DEFAULT 'user',
+    owner_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    config      JSONB NOT NULL DEFAULT '{}',
+    status      TEXT NOT NULL DEFAULT 'idle',
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS trading_sessions (
+    id                  SERIAL PRIMARY KEY,
+    job_id              INTEGER NOT NULL REFERENCES trading_jobs(id) ON DELETE CASCADE,
+    session_date        DATE NOT NULL,
+    orb_high            NUMERIC(12,4),
+    orb_low             NUMERIC(12,4),
+    orb_width           NUMERIC(8,4),
+    orb_established_at  TIMESTAMPTZ,
+    status              TEXT NOT NULL DEFAULT 'open',
+    total_entries       INTEGER NOT NULL DEFAULT 0,
+    total_exits         INTEGER NOT NULL DEFAULT 0,
+    daily_pnl_cents     BIGINT NOT NULL DEFAULT 0,
+    opened_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    closed_at           TIMESTAMPTZ,
+    UNIQUE (job_id, session_date)
+);
+
+CREATE TABLE IF NOT EXISTS trading_events (
+    id              BIGSERIAL,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    job_id          INTEGER NOT NULL REFERENCES trading_jobs(id) ON DELETE CASCADE,
+    session_id      INTEGER REFERENCES trading_sessions(id) ON DELETE CASCADE,
+    event_type      TEXT NOT NULL,
+    direction       TEXT,
+    contract_symbol TEXT,
+    contracts       INTEGER,
+    spy_price       NUMERIC(12,4),
+    orb_high        NUMERIC(12,4),
+    orb_low         NUMERIC(12,4),
+    signal_streak   INTEGER,
+    entry_counts    JSONB,
+    option_price    NUMERIC(12,4),
+    pnl_cents       BIGINT,
+    order_id        TEXT,
+    reason          TEXT,
+    decision        TEXT,
+    meta            JSONB
+);
+
 -- ── Indexes ─────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_fundamentals_equity_period
     ON fundamentals(equity_id, period_end DESC);
@@ -289,11 +344,16 @@ CREATE INDEX IF NOT EXISTS idx_agent_models_entity
     ON agent_models(agent_type, entity_key, version DESC);
 CREATE INDEX IF NOT EXISTS idx_sec_filings_equity
     ON sec_filings(equity_id, filed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trading_events_job_id
+    ON trading_events(job_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_trading_events_type
+    ON trading_events(event_type, time DESC);
 """
 
 HYPERTABLES_MIGRATIONS = """
 SELECT create_hypertable('market_bars', 'time', if_not_exists => TRUE);
 SELECT create_hypertable('macro_data', 'time', if_not_exists => TRUE);
+SELECT create_hypertable('trading_events', 'time', if_not_exists => TRUE);
 """
 
 SEED_DATA = """
@@ -323,6 +383,14 @@ ON CONFLICT (symbol) DO UPDATE
         gics_industry = EXCLUDED.gics_industry,
         is_tracked = EXCLUDED.is_tracked,
         market_cap_tier = EXCLUDED.market_cap_tier;
+
+-- System default job: SPY ORB 0DTE (safe against NULL owner_id unique conflict)
+INSERT INTO trading_jobs (name, strategy, job_type, owner_id, config)
+SELECT 'spy_orb_0dte', 'orb', 'system', NULL,
+       '{"symbol":"SPY","risk_pct":0.03,"max_entries":3,"tp_mult":1.80,"sl_mult":0.45}'
+WHERE NOT EXISTS (
+    SELECT 1 FROM trading_jobs WHERE name = 'spy_orb_0dte' AND owner_id IS NULL
+);
 """
 
 
@@ -353,7 +421,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_url = os.getenv("DATABASE_URL")
     app.state.db_url = db_url
 
-    pool = await asyncpg.create_pool(db_url)
+    async def _init_connection(conn: asyncpg.Connection) -> None:
+        await conn.set_type_codec(
+            "jsonb",
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
+        await conn.set_type_codec(
+            "json",
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
+
+    pool = await asyncpg.create_pool(db_url, init=_init_connection)
     app.state.pool = pool
 
     try:

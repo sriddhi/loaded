@@ -12,7 +12,9 @@ import logging
 import os
 from datetime import date, datetime, timedelta, timezone
 
+import asyncpg
 import httpx
+from app.trading import db as trading_db
 from app.trading.state import (
     OpenPosition,
     ORBLevels,
@@ -69,16 +71,47 @@ def _data_base() -> str:
 class TradingJob:
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
+        self._pool: asyncpg.Pool | None = None  # set at start()
 
     # ── Public interface ──────────────────────────────────────────────────────
 
-    async def start(self) -> None:
-        """Start the trading loop. Idempotent — no-op if already running."""
+    async def start(self, pool: asyncpg.Pool | None = None) -> None:
+        """Start the trading loop. Idempotent — no-op if already running.
+
+        Args:
+            pool: asyncpg.Pool for DB event logging. If None, DB logging is skipped.
+        """
+
         async with state_lock:
             if self._task is not None and not self._task.done():
                 return  # already running
+            self._pool = pool
             trading_state.status = "capturing_orb"
             trading_state.session_date = _now_et().date()
+
+        # Resolve job_id + session_id from DB
+        if pool is not None:
+            try:
+                async with pool.acquire() as conn:
+                    job_id = await trading_db.get_or_create_job(
+                        conn,
+                        name="spy_orb_0dte",
+                        strategy="orb",
+                        job_type="system",
+                        owner_id=None,
+                        config={},
+                    )
+                    session_id = await trading_db.get_or_create_session(
+                        conn, job_id, _now_et().date()
+                    )
+                    await trading_db.set_job_status(conn, job_id, "running")
+                async with state_lock:
+                    trading_state.job_id = job_id
+                    trading_state.session_id = session_id
+                await _db_log(pool, "job_started", decision="started")
+            except Exception as exc:
+                logger.warning("DB job setup failed (non-fatal): %s", exc)
+
         self._task = asyncio.create_task(self._loop())
         logger.info("TradingJob started")
 
@@ -92,6 +125,23 @@ class TradingJob:
                 await self._task
         async with state_lock:
             trading_state.status = "stopped"
+
+        # Close session + update job status in DB
+        if self._pool is not None:
+            try:
+                async with self._pool.acquire() as conn:
+                    if trading_state.session_id is not None:
+                        await trading_db.close_session(
+                            conn,
+                            trading_state.session_id,
+                            pnl_cents=trading_state.daily_pnl_cents,
+                        )
+                    if trading_state.job_id is not None:
+                        await trading_db.set_job_status(conn, trading_state.job_id, "idle")
+                await _db_log(self._pool, "job_stopped", decision="stopped")
+            except Exception as exc:
+                logger.warning("DB job teardown failed (non-fatal): %s", exc)
+
         logger.info("TradingJob stopped")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -115,6 +165,7 @@ class TradingJob:
                     logger.exception(msg)
                     async with state_lock:
                         log_error(msg)
+                    await _db_log(self._pool, "error", reason=msg, decision=None)
 
                 await asyncio.sleep(TICK_INTERVAL_SECONDS)
 
@@ -189,6 +240,26 @@ class TradingJob:
                     "orb_established",
                     reason=f"high={orb.high} low={orb.low} width={orb.width}",
                 )
+            await _db_log(
+                self._pool,
+                "orb_established",
+                decision="orb_established",
+                reason=f"width={orb.width}",
+            )
+            # Persist ORB levels to session row
+            if self._pool is not None and trading_state.session_id is not None:
+                try:
+                    async with self._pool.acquire() as conn:
+                        await trading_db.update_session_orb(
+                            conn,
+                            trading_state.session_id,
+                            orb_high=orb.high,
+                            orb_low=orb.low,
+                            orb_width=orb.width,
+                            orb_established_at=orb.established_at,
+                        )
+                except Exception as exc:
+                    logger.warning("update_session_orb failed: %s", exc)
 
     # ── Entry ─────────────────────────────────────────────────────────────────
 
@@ -217,7 +288,49 @@ class TradingJob:
 
         if enter:
             log_event("signal", direction=direction, price=spy_price)
+            await _db_log(
+                self._pool,
+                "tick",
+                direction=direction,
+                spy_price=spy_price,
+                signal_streak=trading_state.signal_streak.get(direction),
+                entry_counts=dict(trading_state.entry_counts),
+                decision="entered",
+            )
             await self._place_entry(direction, spy_price, now)
+        else:
+            # Log the tick with the reason it was skipped
+            async with state_lock:
+                streak = trading_state.signal_streak.get(direction, 0)
+                ec = dict(trading_state.entry_counts)
+                already_open = any(p.direction == direction for p in trading_state.open_positions)
+            if (
+                direction == "CALL"
+                and spy_price > (trading_state.orb.high if trading_state.orb else float("inf"))
+            ) or (
+                direction == "PUT"
+                and spy_price < (trading_state.orb.low if trading_state.orb else 0)
+            ):
+                # Signal present but skipped
+                if already_open:
+                    decision = "skipped_open_position"
+                elif ec.get(direction, 0) >= 3:
+                    decision = "skipped_max_entries"
+                elif streak < 2:
+                    decision = "skipped_streak"
+                else:
+                    decision = "skipped_unknown"
+            else:
+                decision = "no_signal"
+            await _db_log(
+                self._pool,
+                "tick",
+                direction=direction,
+                spy_price=spy_price,
+                signal_streak=streak,
+                entry_counts=ec,
+                decision=decision,
+            )
 
     # ── Exit ──────────────────────────────────────────────────────────────────
 
@@ -294,9 +407,29 @@ class TradingJob:
                     contracts=contracts,
                     price=ask,
                 )
+            await _db_log(
+                self._pool,
+                "entry",
+                direction=direction,
+                contract_symbol=contract_symbol,
+                contracts=contracts,
+                option_price=ask,
+                order_id=order_id,
+                spy_price=spy_price,
+                decision="entered",
+            )
+            if self._pool is not None and trading_state.session_id is not None:
+                try:
+                    async with self._pool.acquire() as conn:
+                        await trading_db.increment_session_counter(
+                            conn, trading_state.session_id, field="total_entries"
+                        )
+                except Exception as exc:
+                    logger.warning("increment total_entries failed: %s", exc)
 
         except Exception as exc:
             log_error(f"entry error: {exc}")
+            await _db_log(self._pool, "error", reason=f"entry error: {exc}", decision=None)
 
     async def _place_exit(self, position: OpenPosition, mark: float, reason: str) -> None:
         try:
@@ -326,9 +459,31 @@ class TradingJob:
                     reason=reason,
                     pnl_usd=round(pnl, 2),
                 )
+            pnl_cents = int(round(pnl * 100))
+            await _db_log(
+                self._pool,
+                "exit",
+                direction=position.direction,
+                contract_symbol=position.contract_symbol,
+                contracts=position.contracts,
+                option_price=mark,
+                pnl_cents=pnl_cents,
+                order_id=order_id,
+                reason=reason,
+                decision="exited",
+            )
+            if self._pool is not None and trading_state.session_id is not None:
+                try:
+                    async with self._pool.acquire() as conn:
+                        await trading_db.increment_session_counter(
+                            conn, trading_state.session_id, field="total_exits"
+                        )
+                except Exception as exc:
+                    logger.warning("increment total_exits failed: %s", exc)
 
         except Exception as exc:
             log_error(f"exit error: {exc}")
+            await _db_log(self._pool, "error", reason=f"exit error: {exc}", decision=None)
 
     async def _place_order(self, symbol: str, qty: int, side: str) -> str | None:
         """Place market order via Alpaca REST. Returns order_id or None on error."""
@@ -462,6 +617,28 @@ class TradingJob:
 # ── Singleton job instance ────────────────────────────────────────────────────
 
 trading_job = TradingJob()
+
+
+# ── DB logging helper ─────────────────────────────────────────────────────────
+
+
+async def _db_log(pool: asyncpg.Pool | None, event_type: str, **kwargs: object) -> None:
+    """Write one event to trading_events. Non-fatal — logs warning on error."""
+    if pool is None:
+        return
+    try:
+        async with pool.acquire() as conn:
+            await trading_db.log_event(
+                conn,
+                trading_state.job_id or 0,
+                trading_state.session_id,
+                event_type,
+                orb_high=trading_state.orb.high if trading_state.orb else None,
+                orb_low=trading_state.orb.low if trading_state.orb else None,
+                **kwargs,
+            )
+    except Exception as exc:
+        logger.warning("_db_log failed (%s): %s", event_type, exc)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
