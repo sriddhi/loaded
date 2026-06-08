@@ -7,7 +7,6 @@ Each function accepts an asyncpg Connection (acquired/released by the caller).
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, date, datetime
 
 import asyncpg
@@ -50,7 +49,7 @@ async def get_or_create_job(
             name,
             strategy,
             job_type,
-            json.dumps(config),
+            config,  # asyncpg JSONB codec handles serialization
         )
     else:
         row = await conn.fetchrow(
@@ -65,7 +64,7 @@ async def get_or_create_job(
             strategy,
             job_type,
             owner_id,
-            json.dumps(config),
+            config,  # asyncpg JSONB codec handles serialization
         )
     assert row is not None
     return int(row["id"])
@@ -285,13 +284,13 @@ async def log_event(
         orb_high,
         orb_low,
         signal_streak,
-        json.dumps(entry_counts) if entry_counts is not None else None,
+        entry_counts,  # asyncpg JSONB codec handles serialization
         option_price,
         pnl_cents,
         order_id,
         reason,
         decision,
-        json.dumps(meta) if meta is not None else None,
+        meta,  # asyncpg JSONB codec handles serialization
     )
 
 

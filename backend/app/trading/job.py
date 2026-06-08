@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import httpx
@@ -622,7 +623,7 @@ trading_job = TradingJob()
 # ── DB logging helper ─────────────────────────────────────────────────────────
 
 
-async def _db_log(pool: asyncpg.Pool | None, event_type: str, **kwargs: object) -> None:
+async def _db_log(pool: asyncpg.Pool | None, event_type: str, **kwargs: Any) -> None:
     """Write one event to trading_events. Non-fatal — logs warning on error."""
     if pool is None:
         return
