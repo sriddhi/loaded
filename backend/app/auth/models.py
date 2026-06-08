@@ -29,6 +29,7 @@ class UserOut(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    auth_provider: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -38,7 +39,7 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class UserUpdate(BaseModel):

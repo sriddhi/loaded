@@ -1,0 +1,47 @@
+{
+  "feature": "google_oauth",
+  "module": "auth",
+  "date": "2026-06-08",
+  "generator": "ai/generator/auth/google_oauth_generator.md",
+  "evaluator": "ai/evaluator/auth/google_oauth_evaluator.md",
+  "score": 9.75,
+  "checks_passed": 39,
+  "checks_total": 40,
+  "sections": {
+    "db_migration": {
+      "passed": 5,
+      "total": 5,
+      "evidence": "Live psql \\d users: password_hash nullable, auth_provider NOT NULL DEFAULT 'local', google_sub, uq_users_google_sub partial unique index, chk_users_credential CHECK all present. Migration idempotent (CREATE TABLE IF NOT EXISTS + ALTER ... IF NOT EXISTS + DO/EXCEPTION guard)."
+    },
+    "cookies_session": {
+      "passed": 8,
+      "total": 8,
+      "evidence": "Login Set-Cookie: access_token HttpOnly Path=/ Max-Age=900 SameSite=lax; refresh_token HttpOnly Path=/auth/refresh Max-Age=604800. /auth/me works with cookie only; Bearer header still works; logout 204 then /auth/me 401; refresh via cookie 200."
+    },
+    "google_oauth_flow": {
+      "passed": 9,
+      "total": 10,
+      "evidence": "12 unit tests pass: login redirect+state cookie, 503 unconfigured, invalid_state, email_unverified, new-user create (role=client), link existing local, existing google_sub no-duplicate, inactive blocked. NOT live-verified end-to-end against real Google (needs user's GOOGLE_CLIENT_ID/SECRET).",
+      "note": "G-checks verified via mocked unit tests; real Google round-trip pending user credentials."
+    },
+    "security": {
+      "passed": 8,
+      "total": 8,
+      "evidence": "OAuth role hardcoded client; state CSRF single-use compare_digest; redirect restricted to FRONTEND_URL; no secret logging; client_secret server-side only; inactive rejected; DocsAuthMiddleware cookie-or-header; email/password unchanged; OAuth-only acct cannot password-login (401)."
+    },
+    "config_deps": {
+      "passed": 4,
+      "total": 4,
+      "evidence": "google-auth>=2.0.0 in requirements; env vars in .env.example + docker-compose; next.config.mjs rewrites /api/:path* -> backend:8000; login page + AuthContext use credentials:include."
+    },
+    "tests_quality": {
+      "passed": 5,
+      "total": 5,
+      "evidence": "test_auth_google.py (12 tests) green; cookie-or-header + cookie-docs + db functions covered; ruff + mypy clean; full suite 216 passed (2 pre-existing unrelated Alpaca MCP-config failures)."
+    }
+  },
+  "outstanding": [
+    "Live Google round-trip requires real GOOGLE_CLIENT_ID/SECRET + an authorized redirect URI in Google Cloud; verified via mocks only.",
+    "Next.js rewrites Set-Cookie pass-through on the OAuth callback redirect should be confirmed once the frontend is rebuilt and Google creds are set (plan risk #1)."
+  ]
+}

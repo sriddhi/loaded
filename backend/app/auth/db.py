@@ -30,7 +30,8 @@ async def create_user(
 
 async def get_user_by_email(conn: asyncpg.Connection, email: str) -> dict[str, Any] | None:
     row = await conn.fetchrow(
-        "SELECT id, email, password_hash, role, is_active, created_at FROM users WHERE email = $1",
+        "SELECT id, email, password_hash, role, is_active, created_at, auth_provider, google_sub "
+        "FROM users WHERE email = $1",
         email,
     )
     return dict(row) if row else None
@@ -38,7 +39,55 @@ async def get_user_by_email(conn: asyncpg.Connection, email: str) -> dict[str, A
 
 async def get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict[str, Any] | None:
     row = await conn.fetchrow(
-        "SELECT id, email, password_hash, role, is_active, created_at FROM users WHERE id = $1",
+        "SELECT id, email, password_hash, role, is_active, created_at, auth_provider, google_sub "
+        "FROM users WHERE id = $1",
+        user_id,
+    )
+    return dict(row) if row else None
+
+
+async def get_user_by_google_sub(
+    conn: asyncpg.Connection, google_sub: str
+) -> dict[str, Any] | None:
+    row = await conn.fetchrow(
+        "SELECT id, email, password_hash, role, is_active, created_at, auth_provider, google_sub "
+        "FROM users WHERE google_sub = $1",
+        google_sub,
+    )
+    return dict(row) if row else None
+
+
+async def create_oauth_user(
+    conn: asyncpg.Connection,
+    email: str,
+    google_sub: str,
+    role: str = "client",
+) -> dict[str, Any]:
+    """Create a Google-authenticated user (no password)."""
+    row = await conn.fetchrow(
+        """
+        INSERT INTO users (email, password_hash, role, auth_provider, google_sub)
+        VALUES ($1, NULL, $2::user_role, 'google', $3)
+        RETURNING id, email, role, is_active, created_at, auth_provider, google_sub
+        """,
+        email,
+        role,
+        google_sub,
+    )
+    return dict(row)
+
+
+async def link_google_to_user(
+    conn: asyncpg.Connection, user_id: int, google_sub: str
+) -> dict[str, Any] | None:
+    """Attach a Google identity to an existing (local) account; preserves role/password."""
+    row = await conn.fetchrow(
+        """
+        UPDATE users SET google_sub = $1
+        WHERE id = $2
+        RETURNING id, email, role, is_active, created_at, auth_provider, google_sub
+        """,
+        google_sub,
         user_id,
     )
     return dict(row) if row else None
