@@ -445,6 +445,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await conn.execute(HYPERTABLES_MIGRATIONS)
         async with pool.acquire() as conn:
             await conn.execute(SEED_DATA)
+        # Reset any user jobs left in 'running' state from a previous process.
+        # User jobs have no persistent backing loop — they are orphaned after restart.
+        # System jobs are restarted explicitly via POST /trading/start on the next request.
+        async with pool.acquire() as conn:
+            reset_count = await conn.fetchval(
+                """
+                WITH reset AS (
+                    UPDATE trading_jobs
+                    SET status = 'idle', updated_at = NOW()
+                    WHERE status = 'running' AND job_type = 'user'
+                    RETURNING id
+                )
+                SELECT COUNT(*) FROM reset
+                """
+            )
+            if reset_count:
+                print(f"[startup] Reset {reset_count} stale user job(s) to idle.")
+            # Also close any open sessions for user jobs that were reset
+            await conn.execute(
+                """
+                UPDATE trading_sessions
+                SET status = 'closed', closed_at = NOW()
+                WHERE status = 'open'
+                  AND job_id IN (
+                      SELECT id FROM trading_jobs
+                      WHERE job_type = 'user' AND status = 'idle'
+                  )
+                  AND closed_at IS NULL
+                """
+            )
         print("[startup] Migrations, hypertables, and seed data applied.")
     except Exception as e:
         print(f"[startup] DB migration warning: {e}")
