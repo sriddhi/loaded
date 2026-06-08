@@ -59,6 +59,18 @@
       "sha256": "3f496db4dd5b4f0f022bfc5e7821c077c5d629b47e32f15ff63c9eb92a93dee1",
       "locked_at": "2026-06-06T01:44:46Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/agents/fundamentals_generator.md",
+      "sha256": "a5256c1ed998950745b502057c5033acdc26e0a914f71a8a59bf370ba8b1923d",
+      "locked_at": "2026-06-08T04:02:33Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/agents/fundamentals_evaluator.md",
+      "sha256": "02dac9bdb5ad8b41bb1f6443474305c1ea7fcb7d2b3973c513e578eaee22c98a",
+      "locked_at": "2026-06-08T04:02:33Z",
+      "version": "1.0"
     }
   ]
 }
