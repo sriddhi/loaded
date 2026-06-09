@@ -8,6 +8,7 @@ Each function accepts an asyncpg Connection (acquired/released by the caller).
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 import asyncpg
 
@@ -21,7 +22,7 @@ async def get_or_create_job(
     strategy: str,
     job_type: str = "user",
     owner_id: int | None,
-    config: dict,
+    config: dict[str, Any],
 ) -> int:
     """Return job_id. Creates the row if it doesn't exist yet.
 
@@ -70,7 +71,7 @@ async def get_or_create_job(
     return int(row["id"])
 
 
-async def get_job(conn: asyncpg.Connection, job_id: int) -> dict | None:
+async def get_job(conn: asyncpg.Connection, job_id: int) -> dict[str, Any] | None:
     row = await conn.fetchrow("SELECT * FROM trading_jobs WHERE id = $1", job_id)
     return dict(row) if row else None
 
@@ -88,7 +89,7 @@ async def get_jobs(
     owner_id: int | None,
     *,
     is_admin: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return jobs visible to this user: own jobs + system jobs.
     Admins see all jobs.
     """
@@ -214,7 +215,7 @@ async def increment_session_counter(
     )
 
 
-async def get_session_today(conn: asyncpg.Connection, job_id: int) -> dict | None:
+async def get_session_today(conn: asyncpg.Connection, job_id: int) -> dict[str, Any] | None:
     today = datetime.now(tz=UTC).date()
     row = await conn.fetchrow(
         "SELECT * FROM trading_sessions WHERE job_id = $1 AND session_date = $2",
@@ -224,7 +225,9 @@ async def get_session_today(conn: asyncpg.Connection, job_id: int) -> dict | Non
     return dict(row) if row else None
 
 
-async def get_sessions(conn: asyncpg.Connection, job_id: int, limit: int = 30) -> list[dict]:
+async def get_sessions(
+    conn: asyncpg.Connection, job_id: int, limit: int = 30
+) -> list[dict[str, Any]]:
     rows = await conn.fetch(
         "SELECT * FROM trading_sessions WHERE job_id = $1 ORDER BY session_date DESC LIMIT $2",
         job_id,
@@ -249,13 +252,13 @@ async def log_event(
     orb_high: float | None = None,
     orb_low: float | None = None,
     signal_streak: int | None = None,
-    entry_counts: dict | None = None,
+    entry_counts: dict[str, Any] | None = None,
     option_price: float | None = None,
     pnl_cents: int | None = None,
     order_id: str | None = None,
     reason: str | None = None,
     decision: str | None = None,
-    meta: dict | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> None:
     """Insert one row into trading_events."""
     await conn.execute(
@@ -294,7 +297,9 @@ async def log_event(
     )
 
 
-async def get_events(conn: asyncpg.Connection, session_id: int, limit: int = 500) -> list[dict]:
+async def get_events(
+    conn: asyncpg.Connection, session_id: int, limit: int = 500
+) -> list[dict[str, Any]]:
     rows = await conn.fetch(
         """
         SELECT * FROM trading_events
@@ -308,7 +313,9 @@ async def get_events(conn: asyncpg.Connection, session_id: int, limit: int = 500
     return [dict(r) for r in rows]
 
 
-async def get_events_by_job(conn: asyncpg.Connection, job_id: int, limit: int = 200) -> list[dict]:
+async def get_events_by_job(
+    conn: asyncpg.Connection, job_id: int, limit: int = 200
+) -> list[dict[str, Any]]:
     rows = await conn.fetch(
         """
         SELECT * FROM trading_events

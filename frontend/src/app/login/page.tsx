@@ -13,7 +13,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   inactive: "This account is inactive.",
 };
 
-export default function LoginPage() {
+export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
   const { user, refresh } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -33,7 +33,7 @@ export default function LoginPage() {
     if (code) setError(ERROR_MESSAGES[code] ?? "Sign-in failed.");
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setBusy(true);
@@ -206,7 +206,7 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-function GoogleIcon() {
+function GoogleIcon(): React.JSX.Element {
   return (
     <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
       <path

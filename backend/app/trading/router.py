@@ -39,7 +39,7 @@ def _is_admin(user: Any) -> bool:
     return getattr(user, "role", None) == "admin"
 
 
-def _row_to_job(row: dict) -> JobRecord:
+def _row_to_job(row: dict[str, Any]) -> JobRecord:
     return JobRecord(
         id=row["id"],
         name=row["name"],
@@ -55,7 +55,7 @@ def _row_to_job(row: dict) -> JobRecord:
     )
 
 
-def _row_to_session(row: dict) -> SessionRecord:
+def _row_to_session(row: dict[str, Any]) -> SessionRecord:
     return SessionRecord(
         id=row["id"],
         job_id=row["job_id"],
@@ -71,7 +71,7 @@ def _row_to_session(row: dict) -> SessionRecord:
     )
 
 
-def _row_to_event(row: dict) -> EventRecord:
+def _row_to_event(row: dict[str, Any]) -> EventRecord:
     return EventRecord(
         id=row["id"],
         time=row["time"].isoformat() if row.get("time") else "",
@@ -295,7 +295,7 @@ async def get_today_session(
     job_id: int,
     request: Request,
     user: Any = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Today's session + last 200 events for this job."""
     pool = _get_pool(request)
     async with pool.acquire() as conn:

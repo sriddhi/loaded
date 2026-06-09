@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, date, datetime
+from typing import Any
 
 from app.trading.state import OpenPosition, ORBLevels
 
@@ -28,7 +29,7 @@ MIN_ORB_BARS = 5
 # ── ORB ───────────────────────────────────────────────────────────────────────
 
 
-def compute_orb(bars: list[dict]) -> ORBLevels | None:
+def compute_orb(bars: list[dict[str, Any]]) -> ORBLevels | None:
     """Given 1-min bars for 9:30–10:00 ET, return ORB levels.
 
     Args:
