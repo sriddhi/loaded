@@ -164,8 +164,9 @@ export default function LoginPage(): React.JSX.Element {
           <input
             type="password"
             required
-            minLength={8}
-            placeholder="Password (8+ characters)"
+            // Min length is a signup policy; don't block existing (shorter) login passwords.
+            minLength={mode === "signup" ? 8 : undefined}
+            placeholder={mode === "signup" ? "Password (8+ characters)" : "Password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={inputStyle}
