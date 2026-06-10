@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 
 @dataclass
@@ -41,7 +42,7 @@ class TradingState:
     last_tick_at: datetime | None
     signal_streak: dict[str, int]  # {"CALL": 0, "PUT": 0}
     errors: list[str]  # last 10 errors
-    trade_log: list[dict]  # last 100 trade events (in-memory fast read)
+    trade_log: list[dict[str, Any]]  # last 100 trade events (in-memory fast read)
     job_id: int | None  # FK → trading_jobs.id
     session_id: int | None  # FK → trading_sessions.id
 

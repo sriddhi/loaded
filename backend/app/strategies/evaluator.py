@@ -4,6 +4,7 @@ Vectorized backtest engine. Evaluates a StrategyConfig against historical OHLCV 
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -179,7 +180,7 @@ def _compute_metrics(
     equity_curve: list[float],
     trade_signals: list[TradeSignal],
     initial_capital: float,
-) -> dict:
+) -> dict[str, Any]:
     if not equity_curve:
         return {
             "total_return_pct": 0.0,

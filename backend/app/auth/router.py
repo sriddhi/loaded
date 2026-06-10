@@ -273,7 +273,8 @@ async def google_callback(
         if not raw_id_token:
             return _login_error_redirect("oauth_failed")
 
-        claims = google_id_token.verify_oauth2_token(
+        # google-auth ships without type stubs, so this call is untyped.
+        claims: dict[str, Any] = google_id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
             raw_id_token, google_requests.Request(), _google_client_id()
         )
     except Exception:

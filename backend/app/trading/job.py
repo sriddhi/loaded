@@ -526,7 +526,7 @@ class TradingJob:
             log_error(f"fetch_spy_price: {exc}")
         return 0.0
 
-    async def _fetch_spy_bars(self, start: datetime, end: datetime) -> list[dict]:
+    async def _fetch_spy_bars(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
         """Fetch 1-min SPY bars between start and end."""
         try:
             params: dict[str, str] = {
@@ -661,7 +661,7 @@ def _next_option_expiry(today: date, dte_preference: int = 0) -> date:
     return target
 
 
-def _build_status_response() -> dict:
+def _build_status_response() -> dict[str, Any]:
     """Build the status response dict from current trading_state."""
     from app.trading.state import trading_state as ts
 

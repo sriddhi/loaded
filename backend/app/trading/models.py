@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 # ── In-memory status (legacy / fast read) ────────────────────────────────────
@@ -48,7 +50,7 @@ class JobRecord(BaseModel):
     strategy: str
     job_type: str  # 'system' | 'user'
     owner_id: int | None
-    config: dict
+    config: dict[str, Any]
     status: str
     is_active: bool
     created_at: str
@@ -79,7 +81,7 @@ class EventRecord(BaseModel):
     orb_high: float | None
     orb_low: float | None
     signal_streak: int | None
-    entry_counts: dict | None
+    entry_counts: dict[str, Any] | None
     option_price: float | None
     pnl_cents: int | None
     order_id: str | None
@@ -90,7 +92,7 @@ class EventRecord(BaseModel):
 class CreateJobRequest(BaseModel):
     name: str
     strategy: str = "orb"
-    config: dict = {}  # noqa: RUF012
+    config: dict[str, Any] = {}  # noqa: RUF012
 
 
 class StartJobResponse(BaseModel):

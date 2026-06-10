@@ -74,7 +74,7 @@ const TYPE_COLORS: Record<string, string> = {
   CUSTOM: "#c4c4c4",
 };
 
-export default function StrategiesPage() {
+export default function StrategiesPage(): React.JSX.Element {
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export default function StrategiesPage() {
   const [evalError, setEvalError] = useState<string | null>(null);
   const [result, setResult] = useState<EvalResult | null>(null);
 
-  async function handleGenerate() {
+  async function handleGenerate(): Promise<void> {
     if (!prompt.trim()) return;
     setGenerating(true);
     setGenError(null);
@@ -111,7 +111,7 @@ export default function StrategiesPage() {
     }
   }
 
-  async function handleEvaluate() {
+  async function handleEvaluate(): Promise<void> {
     if (!strategy) return;
     setEvaluating(true);
     setEvalError(null);

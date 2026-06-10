@@ -12,10 +12,10 @@ assert() {
   local name="$1" got="$2" expect="$3"
   if [ "$got" = "$expect" ]; then
     echo -e "  ${green}✅ $name${reset}"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo -e "  ${red}❌ $name — got '$got', expected '$expect'${reset}"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
     FAILURES+=("$name")
   fi
 }
@@ -24,21 +24,35 @@ assert_contains() {
   local name="$1" haystack="$2" needle="$3"
   if echo "$haystack" | grep -q "$needle"; then
     echo -e "  ${green}✅ $name${reset}"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo -e "  ${red}❌ $name — '$needle' not found in response${reset}"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
     FAILURES+=("$name")
   fi
 }
 
 warn() {
   echo -e "  ${yellow}⚠️  $1${reset}"
-  ((WARN++))
+  WARN=$((WARN+1))
 }
 
 http_code() { echo "$1" | grep "HTTP:" | cut -d: -f2; }
 body()      { echo "$1" | grep -v "HTTP:"; }
+
+# Look up a trading job id by name for the given token (for idempotent re-runs).
+job_id_by_name() {  # $1=name  $2=token
+  curl -s "$API/trading/jobs" -H "Authorization: Bearer $2" | python3 -c "
+import sys, json
+name = '$1'
+try:
+    for j in json.load(sys.stdin):
+        if j.get('name') == name:
+            print(j.get('id', '')); break
+except Exception:
+    pass
+" 2>/dev/null
+}
 
 echo ""
 echo "══════════════════════════════════════════════════"
@@ -110,11 +124,11 @@ R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/auth/register \
   -d '{"email":"testuser_e2e@example.com","password":"TestPass123!","full_name":"E2E Test User"}')
 CODE=$(http_code "$R")
 if [ "$CODE" = "201" ] || [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ register new user HTTP $CODE${reset}"; ((PASS++))
+  echo -e "  ${green}✅ register new user HTTP $CODE${reset}"; PASS=$((PASS+1))
 elif [ "$CODE" = "409" ]; then
   warn "register: user already exists (idempotent re-run)"
 else
-  echo -e "  ${red}❌ register new user — got $CODE${reset}"; ((FAIL++))
+  echo -e "  ${red}❌ register new user — got $CODE${reset}"; FAIL=$((FAIL+1))
   FAILURES+=("register new user")
 fi
 
@@ -126,7 +140,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/auth/login \
 assert "test user login HTTP 200" "$(http_code "$R")" "200"
 USER_TOKEN=$(body "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
 
-# 2c. Test user role is 'user' not 'admin'
+# 2c. Test user role defaults to 'client' (not admin)
 USER_ROLE=$(body "$R" | python3 -c "
 import sys,json,base64
 d=json.load(sys.stdin)
@@ -140,7 +154,7 @@ try:
 except:
     print('unknown')
 " 2>/dev/null)
-assert "test user role=user" "$USER_ROLE" "user"
+assert "test user role=client" "$USER_ROLE" "client"
 
 echo ""
 echo "── 3. PERMISSION RBAC ──"
@@ -167,16 +181,28 @@ assert "admin GET /trading/jobs → 200" "$(http_code "$R")" "200"
 echo ""
 echo "── 4. TRADING JOB CRUD ──"
 
-# 4a. Create job as test user
+# 4a. Create job as test user (idempotent: reuse if it already exists)
 sleep 1
 R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/trading/jobs \
   -H "Authorization: Bearer $USER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"e2e_test_job","strategy":"orb","config":{"symbol":"SPY"}}')
-assert "create user job → 201" "$(http_code "$R")" "201"
-USER_JOB_ID=$(body "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-assert_contains "job has user type" "$(body "$R")" '"job_type":"user"'
-assert_contains "config stored" "$(body "$R")" '"symbol":"SPY"'
+CREATE_CODE=$(http_code "$R")
+if [ "$CREATE_CODE" = "409" ]; then
+  warn "e2e_test_job already exists — reusing (idempotent re-run)"
+  USER_JOB_ID=$(job_id_by_name "e2e_test_job" "$USER_TOKEN")
+  # Ensure a clean (idle) starting state for the reused job
+  curl -s -o /dev/null -X POST $API/trading/jobs/$USER_JOB_ID/stop \
+    -H "Authorization: Bearer $USER_TOKEN" || true
+else
+  assert "create user job → 201" "$CREATE_CODE" "201"
+  USER_JOB_ID=$(body "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+fi
+# Assert job_type/config from a GET so it holds on both create and reuse paths.
+RG=$(curl -s -w "\nHTTP:%{http_code}" $API/trading/jobs/$USER_JOB_ID \
+  -H "Authorization: Bearer $USER_TOKEN")
+assert_contains "job has user type" "$(body "$RG")" '"job_type":"user"'
+assert_contains "config stored" "$(body "$RG")" '"symbol":"SPY"'
 
 # 4b. GET own job
 sleep 1
@@ -214,7 +240,11 @@ R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/trading/jobs \
   -H "Authorization: Bearer $USER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"e2e_second_job","strategy":"orb"}')
-SECOND_JOB_ID=$(body "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+if [ "$(http_code "$R")" = "409" ]; then
+  SECOND_JOB_ID=$(job_id_by_name "e2e_second_job" "$USER_TOKEN")
+else
+  SECOND_JOB_ID=$(body "$R" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+fi
 sleep 1
 R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/trading/jobs/$SECOND_JOB_ID/start \
   -H "Authorization: Bearer $USER_TOKEN")
@@ -272,7 +302,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/agents/ingest/NVDA \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 CODE=$(http_code "$R")
 if [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ ingest NVDA → 200${reset}"; ((PASS++))
+  echo -e "  ${green}✅ ingest NVDA → 200${reset}"; PASS=$((PASS+1))
   assert_contains "periods written" "$(body "$R")" "periods_written"
 else
   warn "ingest NVDA → $CODE (may be rate-limited by yfinance)"
@@ -295,7 +325,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" $API/agents/equity/NVDA \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 CODE=$(http_code "$R")
 if [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ GET equity/NVDA → 200${reset}"; ((PASS++))
+  echo -e "  ${green}✅ GET equity/NVDA → 200${reset}"; PASS=$((PASS+1))
 else
   warn "GET equity/NVDA → $CODE"
 fi
@@ -306,7 +336,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" $API/agents/fundamentals/ZZZZ999 \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 CODE=$(http_code "$R")
 if [ "$CODE" = "404" ] || [ "$CODE" = "422" ]; then
-  echo -e "  ${green}✅ unknown ticker → $CODE${reset}"; ((PASS++))
+  echo -e "  ${green}✅ unknown ticker → $CODE${reset}"; PASS=$((PASS+1))
 else
   warn "unknown ticker → $CODE (expected 404 or 422)"
 fi
@@ -319,7 +349,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" -X POST $API/agents/ingest/batch \
   -d '{"symbols":["NVDA","HOOD","KO"]}')
 CODE=$(http_code "$R")
 if [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ batch ingest → 200${reset}"; ((PASS++))
+  echo -e "  ${green}✅ batch ingest → 200${reset}"; PASS=$((PASS+1))
 else
   warn "batch ingest → $CODE"
 fi
@@ -332,7 +362,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" $API/strategies/ \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 CODE=$(http_code "$R")
 if [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ GET /strategies/ → 200${reset}"; ((PASS++))
+  echo -e "  ${green}✅ GET /strategies/ → 200${reset}"; PASS=$((PASS+1))
 else
   warn "GET /strategies/ → $CODE"
 fi
@@ -345,7 +375,7 @@ R=$(curl -s -w "\nHTTP:%{http_code}" $API/alpaca/account \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 CODE=$(http_code "$R")
 if [ "$CODE" = "200" ]; then
-  echo -e "  ${green}✅ GET /alpaca/account → 200${reset}"; ((PASS++))
+  echo -e "  ${green}✅ GET /alpaca/account → 200${reset}"; PASS=$((PASS+1))
 elif [ "$CODE" = "503" ] || [ "$CODE" = "424" ] || [ "$CODE" = "422" ]; then
   warn "GET /alpaca/account → $CODE (credentials not set — expected in this env)"
 else

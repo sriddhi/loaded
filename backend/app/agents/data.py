@@ -99,7 +99,7 @@ def _get(df: pd.DataFrame, row_key: str, col: Any) -> Any:
 # ── Core fetch ────────────────────────────────────────────────────────────────
 
 
-def _fetch_sync(symbol: str) -> dict:
+def _fetch_sync(symbol: str) -> dict[str, Any]:
     """Synchronous fetch — runs in thread executor."""
     ticker = yf.Ticker(symbol)
     info = ticker.info or {}
@@ -122,7 +122,7 @@ def _fetch_sync(symbol: str) -> dict:
         bs: pd.DataFrame,
         cf: pd.DataFrame,
         period_type: str,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         if fin is None or fin.empty:
             return []
 
@@ -351,7 +351,7 @@ def _market_cap_tier(market_cap_cents: int | None) -> str | None:
 # ── Public async interface ────────────────────────────────────────────────────
 
 
-async def fetch_fundamentals(symbol: str) -> dict:
+async def fetch_fundamentals(symbol: str) -> dict[str, Any]:
     """Async wrapper — runs yfinance in thread pool to avoid blocking event loop."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _fetch_sync, symbol)
