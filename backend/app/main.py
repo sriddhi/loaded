@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import json
 import os
 from collections.abc import AsyncGenerator, AsyncIterator
@@ -12,6 +14,10 @@ from app.alpaca_client import alpaca_ok
 from app.auth.middleware import DocsAuthMiddleware
 from app.auth.router import router as auth_router
 from app.auth.security import get_current_user
+from app.fundamentals.client import finnhub_ok
+from app.fundamentals.finnhub_ws import FinnhubWsClient, finnhub_api_key, finnhub_ws_enabled
+from app.fundamentals.price_cache import InMemoryPriceCache
+from app.fundamentals.router import router as fundamentals_router
 from app.marketdata.router import router as marketdata_router
 from app.strategies.router import router as strategies_router
 from app.trading.router import router as trading_router
@@ -360,6 +366,48 @@ CREATE INDEX IF NOT EXISTS idx_trading_events_job_id
     ON trading_events(job_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_trading_events_type
     ON trading_events(event_type, time DESC);
+
+-- ── Fundamentals module: RAW financial statements (metrics computed on demand) ─
+CREATE TABLE IF NOT EXISTS financial_statements (
+    id                  SERIAL PRIMARY KEY,
+    equity_id           INTEGER NOT NULL REFERENCES equities(id),
+    asset_class         TEXT NOT NULL DEFAULT 'us_equity',
+    period_type         TEXT NOT NULL,            -- 'annual' | 'quarterly'
+    period_end          DATE NOT NULL,
+    fiscal_year         INTEGER,
+    fiscal_quarter      INTEGER,
+    currency            TEXT NOT NULL DEFAULT 'USD',
+    source              TEXT NOT NULL DEFAULT 'yfinance',
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- RAW line items (integer cents). No computed ratios.
+    revenue             BIGINT,
+    cogs                BIGINT,
+    gross_profit        BIGINT,
+    operating_income    BIGINT,
+    net_income          BIGINT,
+    ebitda              BIGINT,
+    total_assets        BIGINT,
+    total_liabilities   BIGINT,
+    total_equity        BIGINT,
+    total_debt          BIGINT,
+    cash_and_equiv      BIGINT,
+    current_assets      BIGINT,
+    current_liabilities BIGINT,
+    inventory           BIGINT,
+    operating_cash_flow BIGINT,
+    capex               BIGINT,
+    free_cash_flow      BIGINT,
+    -- equity-specific
+    eps_basic           NUMERIC(12,4),
+    eps_diluted         NUMERIC(12,4),
+    shares_basic        BIGINT,
+    shares_diluted      BIGINT,
+    shares_outstanding  BIGINT,
+    dividends_paid      BIGINT,
+    UNIQUE(equity_id, period_type, period_end)
+);
+CREATE INDEX IF NOT EXISTS idx_financial_statements_equity_period
+    ON financial_statements(equity_id, period_end DESC);
 """
 
 HYPERTABLES_MIGRATIONS = """
@@ -493,8 +541,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await _seed_admin(pool)
 
+    # ── Finnhub websocket → live-price cache ──────────────────────────────────
+    app.state.price_cache = None
+    app.state.finnhub_client = None
+    app.state.finnhub_task = None
+    if finnhub_ws_enabled():
+        cache = InMemoryPriceCache()
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT symbol FROM equities WHERE is_tracked = TRUE ORDER BY symbol"
+                )
+            symbols = [str(r["symbol"]) for r in rows]
+        except Exception:
+            symbols = []
+        client = FinnhubWsClient(finnhub_api_key(), cache, symbols)
+        app.state.price_cache = cache
+        app.state.finnhub_client = client
+        app.state.finnhub_task = asyncio.create_task(client.run())
+        print(f"[startup] Finnhub websocket started ({len(symbols)} tracked symbols).")
+    else:
+        print("[startup] FINNHUB_API_KEY not set — live-price websocket disabled.")
+
     yield
 
+    if app.state.finnhub_client is not None:
+        await app.state.finnhub_client.stop()
+    if app.state.finnhub_task is not None:
+        app.state.finnhub_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.finnhub_task
     await pool.close()
 
 
@@ -531,6 +607,7 @@ app.include_router(alpaca_router, dependencies=_auth_dep)
 app.include_router(marketdata_router, dependencies=_auth_dep)
 app.include_router(agents_router, prefix="/agents", dependencies=_auth_dep)
 app.include_router(trading_router, prefix="/trading", dependencies=_auth_dep)
+app.include_router(fundamentals_router, dependencies=_auth_dep)
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -558,10 +635,13 @@ async def db_ok() -> bool:
 async def health() -> dict[str, Any]:
     db = await db_ok()
     alpaca_connected, alpaca_error = alpaca_ok()
+    finnhub_connected, finnhub_error = finnhub_ok(getattr(app.state, "finnhub_client", None))
     return {
         "status": "online",
         "db": "connected" if db else "disconnected",
         "alpaca": "connected" if alpaca_connected else "disconnected",
         "alpaca_error": alpaca_error,
+        "finnhub": "connected" if finnhub_connected else "disconnected",
+        "finnhub_error": finnhub_error,
         "timestamp": datetime.now(UTC).isoformat(),
     }

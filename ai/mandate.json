@@ -42,6 +42,12 @@
       "code_globs": ["scripts/**"],
       "generator_globs": ["ai/generator/tooling/*_generator.md"],
       "evaluator_globs": ["ai/evaluator/tooling/*_evaluator.md"]
+    },
+    {
+      "name": "fundamentals",
+      "code_globs": ["backend/app/fundamentals/**"],
+      "generator_globs": ["ai/generator/fundamentals/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/fundamentals/*_evaluator.md"]
     }
   ],
   "exempt_globs": [
