@@ -1,0 +1,38 @@
+name: Rule #1 Mandate
+
+# Source-agnostic enforcement of CLAUDE.md Rule #1 (generator + evaluator
+# coverage and locked-prompt integrity). Runs on EVERY pull request regardless
+# of base branch, and on EVERY push to any branch — so no code reaches the repo
+# without passing the gate, whatever tool or human produced it.
+on:
+  pull_request:
+  push:
+
+jobs:
+  rule1-mandate:
+    name: rule1-mandate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generator + evaluator mandate (source-agnostic)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR: check only what this branch changes vs its base.
+            python3 scripts/check_generator_mandate.py \
+              --base "origin/${{ github.base_ref }}" \
+              --head "${{ github.event.pull_request.head.sha }}"
+          else
+            # Push (any branch): full-tree audit — lock integrity over every
+            # locked prompt + coverage over all tracked code.
+            python3 scripts/check_generator_mandate.py --all
+          fi
