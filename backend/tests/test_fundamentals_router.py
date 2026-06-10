@@ -9,9 +9,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-that-is-long-enough-for-testing-only")
 
 import app.fundamentals.router  # noqa: E402, F401
+import pytest  # noqa: E402
 from app.fundamentals.models import EquityFinancials  # noqa: E402
 from app.fundamentals.price_cache import InMemoryPriceCache  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _bypass_freshness():
+    # The lazy-TTL refresh path + as_of query are covered in test_fundamentals_refresh;
+    # bypass them here so the router tests exercise routing/serialization only.
+    with (
+        patch("app.fundamentals.router._refresh_then_track", AsyncMock(return_value=None)),
+        patch("app.fundamentals.router._as_of", AsyncMock(return_value=None)),
+    ):
+        yield
 
 
 def _mock_pool() -> MagicMock:

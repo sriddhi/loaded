@@ -18,6 +18,7 @@ from app.fundamentals.models import (
     StatementsResponse,
 )
 from app.fundamentals.price_cache import PriceStore
+from app.fundamentals.refresh import ensure_fresh
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 router = APIRouter(prefix="/fundamentals", tags=["fundamentals"])
@@ -92,6 +93,28 @@ async def _load_series(
     return [_row_to_equity(r) for r in rows]
 
 
+async def _as_of(conn: asyncpg.Connection, symbol: str) -> datetime | None:
+    val: datetime | None = await conn.fetchval(
+        "SELECT MAX(fs.fetched_at) FROM financial_statements fs "
+        "JOIN equities e ON fs.equity_id = e.id WHERE e.symbol = $1",
+        symbol.upper(),
+    )
+    return val
+
+
+async def _refresh_then_track(request: Request, symbol: str) -> None:
+    """Lazy-TTL freshness before a read; cold start blocks, stale serves+refreshes."""
+    pool = _pool(request)
+    async with pool.acquire() as conn:
+        tracked = bool(
+            await conn.fetchval("SELECT is_tracked FROM equities WHERE symbol = $1", symbol.upper())
+        )
+    try:
+        await ensure_fresh(pool, symbol, tracked=tracked)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -113,14 +136,18 @@ async def statements(
     type: str = Query("all"),  # noqa: A002 — API surface name
 ) -> StatementsResponse:
     period_type = "quarterly" if period == "quarterly" else "annual"
+    await _refresh_then_track(request, symbol)
     async with _pool(request).acquire() as conn:
         series = await _load_series(conn, symbol, period_type)
+        as_of = await _as_of(conn, symbol)
     if not series:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No statements for {symbol.upper()} — run refresh first",
         )
-    return StatementsResponse(symbol=symbol.upper(), period_type=period, statements=series)
+    return StatementsResponse(
+        symbol=symbol.upper(), period_type=period, statements=series, as_of=as_of
+    )
 
 
 @router.get("/{symbol}/metrics", response_model=MetricsResponse)
@@ -135,8 +162,10 @@ async def metrics(
         raise HTTPException(status_code=422, detail="No metrics requested")
 
     load_type = "annual" if period == "annual" else "quarterly"
+    await _refresh_then_track(request, symbol)
     async with _pool(request).acquire() as conn:
         series = await _load_series(conn, symbol, load_type)
+        as_of = await _as_of(conn, symbol)
     if not series:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -171,6 +200,7 @@ async def metrics(
         metrics=computed,
         price_used=price_used,
         unknown_metrics=unknown,
+        as_of=as_of,
     )
 
 

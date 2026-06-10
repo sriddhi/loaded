@@ -118,6 +118,7 @@ class StatementsResponse(BaseModel):
     symbol: str
     period_type: PeriodType
     statements: list[EquityFinancials]
+    as_of: datetime | None = None  # latest fetched_at — surfaces freshness
 
 
 class MetricsResponse(BaseModel):
@@ -126,6 +127,7 @@ class MetricsResponse(BaseModel):
     metrics: dict[str, float | None]
     price_used: float | None
     unknown_metrics: list[str] = []
+    as_of: datetime | None = None
 
 
 class PriceResponse(BaseModel):
