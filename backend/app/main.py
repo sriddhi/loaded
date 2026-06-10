@@ -475,6 +475,11 @@ ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_5m TEXT;
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_10m TEXT;
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_20m TEXT;
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_1d TEXT;
+-- 1-minute horizon (label/confidence/reason + backtest verdict).
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS sig_1m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS conf_1m NUMERIC(4,3);
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_1m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_1m TEXT;
 """
 
 HYPERTABLES_MIGRATIONS = """

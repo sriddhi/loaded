@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # horizon_min → (signal-label column, result column)
 _COLS: dict[int, tuple[str, str]] = {
+    1: ("sig_1m", "res_1m"),
     5: ("sig_5m", "res_5m"),
     10: ("sig_10m", "res_10m"),
     20: ("sig_20m", "res_20m"),

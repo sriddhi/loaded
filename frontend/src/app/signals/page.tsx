@@ -39,7 +39,7 @@ const LABEL_TEXT: Record<string, string> = {
   neutral: "Neutral",
 };
 
-const HZ = [5, 10, 20, 1440];
+const HZ = [1, 5, 10, 20, 1440];
 
 function hzLabel(h: number): string {
   return h >= 1440 ? "1 day" : `${h} min`;
@@ -325,7 +325,7 @@ export default function SignalsPage(): React.JSX.Element {
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: 14, color: "#555" }}>
+                <td colSpan={8} style={{ padding: 14, color: "#555" }}>
                   No history yet.
                 </td>
               </tr>

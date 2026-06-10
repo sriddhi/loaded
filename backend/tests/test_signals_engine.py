@@ -13,8 +13,8 @@ def _flat_vol(n: int, v: float = 1000.0) -> list[float]:
     return [v] * n
 
 
-def test_horizons_include_one_day():
-    assert HORIZONS == [5, 10, 20, 1440]
+def test_horizons_include_one_minute_and_one_day():
+    assert HORIZONS == [1, 5, 10, 20, 1440]
 
 
 def test_bullish_on_strong_uptrend():

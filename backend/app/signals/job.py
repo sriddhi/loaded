@@ -100,14 +100,19 @@ async def tick_once(pool: asyncpg.Pool, symbol: str) -> dict[str, Any] | None:
             """
             INSERT INTO spy_signals
                 (symbol, price, volume,
+                 sig_1m, conf_1m, reason_1m,
                  sig_5m, conf_5m, reason_5m, sig_10m, conf_10m, reason_10m,
                  sig_20m, conf_20m, reason_20m, sig_1d, conf_1d, reason_1d)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    $13, $14, $15, $16, $17, $18)
             RETURNING ts
             """,
             symbol,
             price,
             volume,
+            r[1][0],
+            r[1][1],
+            r[1][2],
             r[5][0],
             r[5][1],
             r[5][2],
@@ -173,6 +178,7 @@ def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
         "price": float(row["price"]),
         "volume": int(row["volume"] or 0),
         "signals": [
+            sig(1, "sig_1m", "conf_1m", "reason_1m", "res_1m"),
             sig(5, "sig_5m", "conf_5m", "reason_5m", "res_5m"),
             sig(10, "sig_10m", "conf_10m", "reason_10m", "res_10m"),
             sig(20, "sig_20m", "conf_20m", "reason_20m", "res_20m"),

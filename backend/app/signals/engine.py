@@ -21,8 +21,8 @@ Logic (per horizon):
 
 from __future__ import annotations
 
-# 5m, 10m, 20m, and 1 day (1440 min).
-HORIZONS: list[int] = [5, 10, 20, 1440]
+# 1m, 5m, 10m, 20m, and 1 day (1440 min).
+HORIZONS: list[int] = [1, 5, 10, 20, 1440]
 
 # Base move (fraction) that counts as directional over a 1-minute horizon; scales
 # with √horizon because volatility grows with time.

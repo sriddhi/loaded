@@ -52,7 +52,7 @@ async def test_tick_once_stores_and_returns_signal():
     assert result["symbol"] == "AVGO"
     assert result["price"] == 108.0
     assert result["volume"] == 2000
-    assert {s["horizon_min"] for s in result["signals"]} == {5, 10, 20, 1440}
+    assert {s["horizon_min"] for s in result["signals"]} == {1, 5, 10, 20, 1440}
     assert all(s["reason"] for s in result["signals"])  # every rating has a reason
     conn.fetchval.assert_awaited_once()  # inserted a row
 

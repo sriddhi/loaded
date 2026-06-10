@@ -52,8 +52,8 @@ async def test_evaluate_due_resolves_and_updates():
     conn = MagicMock()
     conn.__aenter__ = AsyncMock(return_value=conn)
     conn.__aexit__ = AsyncMock(return_value=False)
-    # First horizon (5m) returns the due row; others return empty.
-    conn.fetch = AsyncMock(side_effect=[[due_row], [], [], []])
+    # Horizons are [1, 5, 10, 20, 1440]; the 5m pass returns the due row.
+    conn.fetch = AsyncMock(side_effect=[[], [due_row], [], [], []])
     conn.fetchrow = AsyncMock(return_value=fut_row)
     conn.execute = AsyncMock()
     pool = MagicMock()
@@ -80,7 +80,7 @@ async def test_evaluate_due_skips_when_no_future_price():
     conn = MagicMock()
     conn.__aenter__ = AsyncMock(return_value=conn)
     conn.__aexit__ = AsyncMock(return_value=False)
-    conn.fetch = AsyncMock(side_effect=[[due_row], [], [], []])
+    conn.fetch = AsyncMock(side_effect=[[], [due_row], [], [], []])
     conn.fetchrow = AsyncMock(return_value=None)  # no realized price yet
     conn.execute = AsyncMock()
     pool = MagicMock()
