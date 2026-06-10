@@ -202,15 +202,24 @@ async def logout(response: Response) -> Response:
 # ── Google OAuth ─────────────────────────────────────────────────────────────
 
 
+@router.get("/config")
+async def auth_config() -> dict[str, bool]:
+    """Public: tells the login page which auth methods are available."""
+    return {
+        "google_enabled": bool(
+            _google_client_id() and _google_client_secret() and _google_redirect_uri()
+        )
+    }
+
+
 @router.get("/google/login")
 @limiter.limit("10/minute")
 async def google_login(request: Request) -> RedirectResponse:
     """Begin the Google authorization-code flow. Sets a CSRF state cookie."""
     if not _google_client_id() or not _google_redirect_uri():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth is not configured",
-        )
+        # Degrade gracefully — this is a top-level navigation, so redirect back to
+        # the login page with a friendly error rather than dumping raw JSON.
+        return _login_error_redirect("oauth_unconfigured")
     state = secrets.token_urlsafe(32)
     params = {
         "client_id": _google_client_id(),

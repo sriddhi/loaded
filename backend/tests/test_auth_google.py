@@ -91,10 +91,19 @@ def test_google_login_redirects_and_sets_state_cookie():
     assert "oauth_state" in resp.cookies
 
 
-def test_google_login_503_when_unconfigured():
+def test_google_login_redirects_when_unconfigured():
+    # Degrades gracefully (no raw 503 JSON) — redirect back to login with an error.
     with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": ""}):
         resp = _tc().get("/auth/google/login", follow_redirects=False)
-    assert resp.status_code == 503
+    assert resp.status_code == 302
+    assert "error=oauth_unconfigured" in resp.headers["location"]
+
+
+def test_auth_config_reports_google_disabled():
+    with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": ""}):
+        resp = _tc().get("/auth/config")
+    assert resp.status_code == 200
+    assert resp.json()["google_enabled"] is False
 
 
 # ── /auth/google/callback ─────────────────────────────────────────────────────

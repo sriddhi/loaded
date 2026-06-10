@@ -10,6 +10,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_state: "Sign-in expired — please try again.",
   email_unverified: "Your Google email is not verified.",
   oauth_failed: "Google sign-in failed — please try again.",
+  oauth_unconfigured: "Google sign-in isn’t set up yet — use email and password.",
   inactive: "This account is inactive.",
 };
 
@@ -21,6 +22,7 @@ export default function LoginPage(): React.JSX.Element {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   // Already authenticated → leave the login page.
   useEffect(() => {
@@ -31,6 +33,21 @@ export default function LoginPage(): React.JSX.Element {
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("error");
     if (code) setError(ERROR_MESSAGES[code] ?? "Sign-in failed.");
+  }, []);
+
+  // Only show the Google button if the backend has OAuth configured.
+  useEffect(() => {
+    void (async (): Promise<void> => {
+      try {
+        const res = await apiFetch("/auth/config");
+        if (res.ok)
+          setGoogleEnabled(
+            ((await res.json()) as { google_enabled?: boolean }).google_enabled ?? false
+          );
+      } catch {
+        setGoogleEnabled(false);
+      }
+    })();
   }, []);
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
@@ -96,40 +113,44 @@ export default function LoginPage(): React.JSX.Element {
           {mode === "login" ? "Sign in to continue" : "Create your account"}
         </p>
 
-        <a
-          href="/api/auth/google/login"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            width: "100%",
-            padding: "12px 16px",
-            background: "#f5f5f5",
-            color: "#0a0a0a",
-            borderRadius: 8,
-            fontWeight: 600,
-            fontSize: 14,
-            textDecoration: "none",
-            boxSizing: "border-box",
-          }}
-        >
-          <GoogleIcon /> Continue with Google
-        </a>
+        {googleEnabled && (
+          <>
+            <a
+              href="/api/auth/google/login"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "12px 16px",
+                background: "#f5f5f5",
+                color: "#0a0a0a",
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+                textDecoration: "none",
+                boxSizing: "border-box",
+              }}
+            >
+              <GoogleIcon /> Continue with Google
+            </a>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            margin: "20px 0",
-            color: "#555",
-            fontSize: 12,
-          }}
-        >
-          <span style={{ flex: 1, height: 1, background: "#222" }} /> OR{" "}
-          <span style={{ flex: 1, height: 1, background: "#222" }} />
-        </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                margin: "20px 0",
+                color: "#555",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ flex: 1, height: 1, background: "#222" }} /> OR{" "}
+              <span style={{ flex: 1, height: 1, background: "#222" }} />
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <input
@@ -143,8 +164,9 @@ export default function LoginPage(): React.JSX.Element {
           <input
             type="password"
             required
-            minLength={8}
-            placeholder="Password (8+ characters)"
+            // Min length is a signup policy; don't block existing (shorter) login passwords.
+            minLength={mode === "signup" ? 8 : undefined}
+            placeholder={mode === "signup" ? "Password (8+ characters)" : "Password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={inputStyle}

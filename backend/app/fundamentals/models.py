@@ -136,3 +136,10 @@ class PriceResponse(BaseModel):
     ts: datetime
     stale: bool
     source: str = "finnhub"
+
+
+class TrackedEquity(BaseModel):
+    symbol: str
+    name: str | None = None
+    sector: str | None = None
+    market_cap_tier: str | None = None
