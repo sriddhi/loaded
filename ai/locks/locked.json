@@ -155,6 +155,42 @@
       "sha256": "30969db252855aeab4a79d83d08c6f95f1fac511268849fdf41ba83dd3f2a2cd",
       "locked_at": "2026-06-10T20:39:39Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/strategies/strategy_chat_generator.md",
+      "sha256": "d550729abb4cb1529d5d184c38faf5e9b4f57bc46d665840037cddf170e02ca2",
+      "locked_at": "2026-06-10T21:03:44Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/strategies/strategy_chat_evaluator.md",
+      "sha256": "1b66a082fb7b76dbd0bee059083aa4a6fd7718af780a34b00b48b7f0b8413959",
+      "locked_at": "2026-06-10T21:03:45Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/strategies/strategy_runtime_generator.md",
+      "sha256": "024ce1ba65bf3e0e5c9375e617f9f8e48b8142aad2012445bad1a0cd7206172f",
+      "locked_at": "2026-06-10T21:03:45Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/strategies/strategy_runtime_evaluator.md",
+      "sha256": "2abe5ee3a2ede91cd4f767ee1a3c095376e6dad6b302e810e15e9d0cb63f81d4",
+      "locked_at": "2026-06-10T21:03:45Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/strategies/strategy_backtest_generator.md",
+      "sha256": "9af749116db12fee228e179b344abdd0282ec2b5ffa2ed5153b7c12f51808caf",
+      "locked_at": "2026-06-10T21:03:45Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/strategies/strategy_backtest_evaluator.md",
+      "sha256": "165cacddf836c6bcd0f2922d746426549da55245d1036400f13da7bc202ffc24",
+      "locked_at": "2026-06-10T21:03:45Z",
+      "version": "1.0"
     }
   ]
 }

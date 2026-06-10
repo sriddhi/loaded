@@ -29,6 +29,7 @@ from app.signals.job import SpySignalJob, signals_enabled
 from app.signals.retention import RetentionJob
 from app.signals.router import router as signals_router
 from app.strategies.router import router as strategies_router
+from app.strategies.runtime import StrategyScheduler
 from app.trading.router import router as trading_router
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,6 +87,30 @@ CREATE TABLE IF NOT EXISTS evaluations (
     metrics_json JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Strategy Lab: per-strategy execution settings + run log.
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT false;
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'backtest';
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS symbols TEXT[];
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS run_config_json JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS strategy_runs (
+    id SERIAL PRIMARY KEY,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
+    run_type TEXT NOT NULL,              -- backtest | signal | paper
+    status TEXT NOT NULL,                -- ok | error
+    source TEXT NOT NULL DEFAULT 'backend', -- ui | backend
+    period TEXT,
+    metrics_json JSONB,
+    equity_curve_json JSONB,
+    detail TEXT,
+    duration_ms INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_strategy_runs_sid_ts
+    ON strategy_runs(strategy_id, created_at DESC);
 
 -- ── GICS reference ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS gics_sectors (
@@ -674,6 +699,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.retention_task = asyncio.create_task(retention_job.run())
         print("[startup] Signal retention job started.")
 
+    # ── Strategy scheduler (runs enabled saved strategies on their schedule) ──
+    strategy_scheduler = StrategyScheduler(pool)
+    app.state.strategy_scheduler = strategy_scheduler
+    app.state.strategy_scheduler_task = asyncio.create_task(strategy_scheduler.run())
+    print("[startup] Strategy scheduler started.")
+
     # ── Register jobs in the ops metrics registry (for the Tools tab) ──────────
     if app.state.finnhub_client is not None:
         METRICS.register_job("finnhub_ws", "backend", "running")
@@ -684,6 +715,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         METRICS.register_job("signal_backtester", "backend", "running")
     if app.state.retention_job is not None:
         METRICS.register_job("signal_retention", "backend", "idle")
+    METRICS.register_job("strategy_scheduler", "backend", "running")
 
     yield
 
@@ -715,6 +747,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.retention_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.retention_task
+    await app.state.strategy_scheduler.stop()
+    app.state.strategy_scheduler_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await app.state.strategy_scheduler_task
     await pool.close()
 
 

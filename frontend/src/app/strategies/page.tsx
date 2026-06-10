@@ -1,569 +1,746 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../lib/api";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000";
-
-const spinnerStyle = `
-  @keyframes spin {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  @keyframes pulse-dot {
-    0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-    40%            { opacity: 1;   transform: scale(1.1); }
-  }
-  .spinner {
-    display: inline-block;
-    width: 13px;
-    height: 13px;
-    border: 2px solid #555;
-    border-top-color: #0a0a0a;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 7px;
-  }
-  .pulse-dots span {
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    margin: 0 2px;
-    background: #0a0a0a;
-    border-radius: 50%;
-    animation: pulse-dot 1.2s infinite ease-in-out;
-  }
-  .pulse-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .pulse-dots span:nth-child(3) { animation-delay: 0.4s; }
-`;
-
-interface StrategyConfig {
+// ── Types ─────────────────────────────────────────────────────────────────────
+type StrategyConfig = {
   name: string;
   description: string;
   type: string;
   parameters: Record<string, unknown>;
   filters: Record<string, unknown>;
   signal_logic: string;
-}
-
-interface TradeSignal {
-  date: string;
-  action: "BUY" | "SELL";
-  price: number;
-  pnl?: number;
-}
-
-interface EvalResult {
-  strategy_name: string;
-  symbol: string;
-  period: string;
-  total_return_pct: number;
-  sharpe_ratio: number;
-  max_drawdown_pct: number;
-  win_rate: number;
-  total_trades: number;
-  equity_curve: number[];
-  signals: TradeSignal[];
-}
-
-const TYPE_COLORS: Record<string, string> = {
-  MOMENTUM: "#e8ff47",
-  BREAKOUT: "#47d4ff",
-  MEAN_REVERSION: "#ff9447",
-  CUSTOM: "#c4c4c4",
+};
+type Artifact = { type: "strategy" | "market_data" | "backtest" | "text"; data: unknown };
+type ChatMessage = { role: string; content: string };
+type RunConfig = {
+  schedule_kind: string;
+  interval_minutes: number;
+  run_at_et: string;
+  backtest_enabled: boolean;
+  backtest_periods: string[];
+  backtest_symbol: string | null;
+  paper_qty: number;
+  max_positions: number;
+};
+type Saved = {
+  id: number;
+  name: string;
+  config: StrategyConfig;
+  mode: string;
+  enabled: boolean;
+  symbols: string[];
+  run_config: Partial<RunConfig>;
+  last_run_at: string | null;
+};
+type Run = {
+  id: number;
+  run_type: string;
+  status: string;
+  source: string;
+  period: string | null;
+  metrics: Record<string, unknown> | null;
+  detail: string | null;
+  duration_ms: number | null;
+  created_at: string;
 };
 
+const MODES = ["backtest", "signal", "paper"];
+const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
+const ACCENT = "#e8ff47";
+
+const card: React.CSSProperties = {
+  background: "#111",
+  border: "1px solid #222",
+  borderRadius: 10,
+};
+
+// ── Right-panel artifact renderers ────────────────────────────────────────────
+function MarketDataView({ data }: { data: Record<string, unknown> }): React.JSX.Element {
+  const rows = (data.rows as Record<string, unknown>[]) ?? null;
+  const gainers = (data.gainers as Record<string, unknown>[]) ?? null;
+  const losers = (data.losers as Record<string, unknown>[]) ?? null;
+  const fundamentals = data.fundamentals as Record<string, unknown> | undefined;
+  const renderTable = (items: Record<string, unknown>[]): React.JSX.Element => (
+    <table
+      style={{ width: "100%", fontSize: 13, fontFamily: "monospace", borderCollapse: "collapse" }}
+    >
+      <tbody>
+        {items.map((r, i) => (
+          <tr key={i} style={{ borderTop: "1px solid #1a1a1a" }}>
+            {Object.entries(r).map(([k, v]) => (
+              <td key={k} style={{ padding: "6px 10px", color: k === "symbol" ? "#fff" : "#aaa" }}>
+                {String(v)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  return (
+    <div>
+      <h3 style={{ fontSize: 15, marginBottom: 10 }}>{String(data.title ?? "Market data")}</h3>
+      {rows && renderTable(rows)}
+      {gainers && (
+        <>
+          <div style={{ color: "#22c55e", fontSize: 12, margin: "10px 0 4px" }}>Gainers</div>
+          {renderTable(gainers)}
+        </>
+      )}
+      {losers && (
+        <>
+          <div style={{ color: "#ef4444", fontSize: 12, margin: "10px 0 4px" }}>Losers</div>
+          {renderTable(losers)}
+        </>
+      )}
+      {fundamentals && (
+        <pre style={{ fontSize: 12, color: "#aaa", whiteSpace: "pre-wrap", marginTop: 10 }}>
+          {JSON.stringify(fundamentals, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  good,
+}: {
+  label: string;
+  value: string;
+  good?: boolean;
+}): React.JSX.Element {
+  return (
+    <div>
+      <div style={{ color: "#666", fontSize: 11 }}>{label}</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: good === undefined ? "#fff" : good ? "#22c55e" : "#ef4444",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function BacktestView({ data }: { data: Record<string, unknown> }): React.JSX.Element {
+  const results = (data.results as Record<string, unknown>[]) ?? [];
+  return (
+    <div>
+      <h3 style={{ fontSize: 15, marginBottom: 10 }}>Backtest results</h3>
+      {results.map((r, i) => {
+        const m = (r.metrics as Record<string, number>) ?? {};
+        const curve = ((r.equity_curve as number[]) ?? []).map((v, idx) => ({ i: idx, v }));
+        if (r.status === "error")
+          return (
+            <div key={i} style={{ color: "#ef4444", fontSize: 13, marginBottom: 10 }}>
+              {String(r.period)}: {String(r.detail)}
+            </div>
+          );
+        return (
+          <div key={i} style={{ ...card, padding: 14, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: "#777", marginBottom: 8 }}>
+              {String(r.period)} · {String(m.symbol ?? "")}
+            </div>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 10 }}>
+              <Metric
+                label="Return"
+                value={`${(m.total_return_pct ?? 0).toFixed(2)}%`}
+                good={(m.total_return_pct ?? 0) >= 0}
+              />
+              <Metric label="Sharpe" value={(m.sharpe_ratio ?? 0).toFixed(2)} />
+              <Metric label="Max DD" value={`${(m.max_drawdown_pct ?? 0).toFixed(2)}%`} />
+              <Metric label="Win rate" value={`${((m.win_rate ?? 0) * 100).toFixed(0)}%`} />
+              <Metric label="Trades" value={String(m.total_trades ?? 0)} />
+            </div>
+            {curve.length > 1 && (
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={curve}>
+                  <XAxis dataKey="i" hide />
+                  <YAxis domain={["auto", "auto"]} hide />
+                  <Tooltip contentStyle={{ background: "#111", border: "1px solid #333" }} />
+                  <Line dataKey="v" stroke={ACCENT} dot={false} strokeWidth={1.5} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function StrategiesPage(): React.JSX.Element {
-  const [prompt, setPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
-  const [strategy, setStrategy] = useState<StrategyConfig | null>(null);
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [draft, setDraft] = useState<StrategyConfig | null>(null);
+  const [mode, setMode] = useState("backtest");
+  const [scheduleKind, setScheduleKind] = useState("manual");
+  const [intervalMin, setIntervalMin] = useState(60);
+  const [runAtEt, setRunAtEt] = useState("16:05");
+  const [symbol, setSymbol] = useState("SPY");
+  const [periods, setPeriods] = useState<string[]>(["1y"]);
+  const [saved, setSaved] = useState<Saved[]>([]);
+  const [runsFor, setRunsFor] = useState<{ id: number; runs: Run[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const chatEnd = useRef<HTMLDivElement>(null);
 
-  const [symbol, setSymbol] = useState("AAPL");
-  const [period, setPeriod] = useState("1y");
-  const [capital, setCapital] = useState("10000");
-  const [evaluating, setEvaluating] = useState(false);
-  const [evalError, setEvalError] = useState<string | null>(null);
-  const [result, setResult] = useState<EvalResult | null>(null);
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
 
-  async function handleGenerate(): Promise<void> {
-    if (!prompt.trim()) return;
-    setGenerating(true);
-    setGenError(null);
-    setStrategy(null);
-    setResult(null);
+  const loadSaved = useCallback(async (): Promise<void> => {
+    const res = await apiFetch("/strategies/");
+    if (res.ok) setSaved((await res.json()) as Saved[]);
+  }, []);
+
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
+
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const send = useCallback(async (): Promise<void> => {
+    const text = input.trim();
+    if (!text || busy) return;
+    const next = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setInput("");
+    setBusy(true);
+    setError(null);
     try {
-      const res = await fetch(`${API}/strategies/generate`, {
+      const res = await apiFetch("/strategies/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ natural_language_prompt: prompt }),
+        body: JSON.stringify({ messages: next }),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail ?? "Generation failed");
+        const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(body.detail ?? `Chat failed (${res.status})`);
       }
-      setStrategy(await res.json());
-    } catch (e: unknown) {
-      setGenError(e instanceof Error ? e.message : "Unknown error");
+      const data = (await res.json()) as { reply: string; artifact: Artifact };
+      setMessages([...next, { role: "assistant", content: data.reply }]);
+      setArtifact(data.artifact);
+      if (data.artifact?.type === "strategy") {
+        setDraft(data.artifact.data as StrategyConfig);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chat failed.");
     } finally {
-      setGenerating(false);
+      setBusy(false);
     }
-  }
+  }, [input, busy, messages]);
 
-  async function handleEvaluate(): Promise<void> {
-    if (!strategy) return;
-    setEvaluating(true);
-    setEvalError(null);
-    setResult(null);
-    try {
-      const res = await fetch(`${API}/strategies/evaluate`, {
-        method: "POST",
+  const saveStrategy = useCallback(async (): Promise<void> => {
+    if (!draft) return;
+    setError(null);
+    const run_config: RunConfig = {
+      schedule_kind: scheduleKind,
+      interval_minutes: intervalMin,
+      run_at_et: runAtEt,
+      backtest_enabled: true,
+      backtest_periods: periods,
+      backtest_symbol: symbol,
+      paper_qty: 1,
+      max_positions: 1,
+    };
+    const res = await apiFetch("/strategies/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: draft, mode, enabled: false, symbols: [symbol], run_config }),
+    });
+    if (res.ok) {
+      setDraft(null);
+      setArtifact({ type: "text", data: "Saved. Configure it below." });
+      await loadSaved();
+    } else {
+      setError(`Save failed (${res.status}).`);
+    }
+  }, [draft, mode, scheduleKind, intervalMin, runAtEt, symbol, periods, loadSaved]);
+
+  const toggleEnabled = useCallback(
+    async (s: Saved): Promise<void> => {
+      await apiFetch(`/strategies/${s.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          strategy_config: strategy,
-          symbol,
-          period,
-          initial_capital: parseFloat(capital) || 10000,
-        }),
+        body: JSON.stringify({ enabled: !s.enabled }),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail ?? "Evaluation failed");
-      }
-      setResult(await res.json());
-    } catch (e: unknown) {
-      setEvalError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setEvaluating(false);
-    }
-  }
+      await loadSaved();
+    },
+    [loadSaved]
+  );
 
-  const equityData = result?.equity_curve.map((v, i) => ({ i, value: v })) ?? [];
-  const positive = (result?.total_return_pct ?? 0) >= 0;
+  const backtestSaved = useCallback(
+    async (s: Saved): Promise<void> => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await apiFetch(`/strategies/${s.id}/backtest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            periods: s.run_config.backtest_periods ?? ["1y"],
+            symbol: s.symbols[0] ?? null,
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as Record<string, unknown>;
+          setArtifact({ type: "backtest", data });
+        } else setError(`Backtest failed (${res.status}).`);
+      } finally {
+        setBusy(false);
+        await loadSaved();
+      }
+    },
+    [loadSaved]
+  );
+
+  const viewRuns = useCallback(async (s: Saved): Promise<void> => {
+    const res = await apiFetch(`/strategies/${s.id}/runs`);
+    if (res.ok) setRunsFor({ id: s.id, runs: (await res.json()) as Run[] });
+  }, []);
+
+  const removeStrategy = useCallback(
+    async (s: Saved): Promise<void> => {
+      await apiFetch(`/strategies/${s.id}`, { method: "DELETE" });
+      setRunsFor((cur) => (cur?.id === s.id ? null : cur));
+      await loadSaved();
+    },
+    [loadSaved]
+  );
+
+  if (authLoading || !user) return <main style={{ background: "#0a0a0a", minHeight: "100vh" }} />;
 
   return (
     <main
       style={{
         background: "#0a0a0a",
-        minHeight: "100vh",
         color: "#f5f5f5",
-        padding: "48px 32px",
-        fontFamily: "inherit",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        padding: "20px 24px",
+        boxSizing: "border-box",
       }}
     >
-      <style>{spinnerStyle}</style>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, letterSpacing: "-0.5px" }}>
-        Strategy Lab
-      </h1>
-      <p style={{ color: "#666", marginBottom: 40, fontSize: 14 }}>
-        Describe a strategy in plain English — Claude generates the config, then backtest it.
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 2 }}>Strategy Lab</h1>
+      <p style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
+        Chat to explore the market and build strategies. Save them, schedule runs, backtest, and
+        (paper) trade. Paper/indicator tool — not financial advice.
       </p>
+      {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{error}</div>}
 
-      {/* ── Generator ── */}
-      <section style={{ maxWidth: 720, marginBottom: 40 }}>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe your strategy in plain English... e.g. 'Buy stocks that break above their 20-day SMA on high volume, sell when they fall back below it'"
-          rows={4}
-          style={{
-            width: "100%",
-            background: "#111",
-            border: genError ? "1px solid #ff4747" : "1px solid #222",
-            borderRadius: 8,
-            color: "#f5f5f5",
-            padding: "14px 16px",
-            fontSize: 14,
-            resize: "vertical",
-            outline: "none",
-            boxSizing: "border-box",
-            fontFamily: "inherit",
-          }}
-        />
-
-        {genError && <p style={{ color: "#ff4747", fontSize: 13, marginTop: 8 }}>{genError}</p>}
-
-        <button
-          onClick={handleGenerate}
-          disabled={generating || !prompt.trim()}
-          style={{
-            marginTop: 12,
-            background: generating || !prompt.trim() ? "#333" : "#e8ff47",
-            color: generating || !prompt.trim() ? "#666" : "#0a0a0a",
-            border: "none",
-            borderRadius: 6,
-            padding: "10px 24px",
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: generating || !prompt.trim() ? "not-allowed" : "pointer",
-            transition: "background 0.15s",
-          }}
-        >
-          {generating ? (
-            <>
-              <span className="spinner" />
-              Claude is thinking
-              <span className="pulse-dots" style={{ marginLeft: 4 }}>
-                <span />
-                <span />
-                <span />
-              </span>
-            </>
-          ) : (
-            "Generate Strategy"
-          )}
-        </button>
-      </section>
-
-      {/* ── Strategy Card ── */}
-      {strategy && (
-        <section
-          style={{
-            maxWidth: 720,
-            marginBottom: 40,
-            background: "#111",
-            border: "1px solid #222",
-            borderRadius: 10,
-            padding: 24,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{strategy.name}</h2>
-            <span
-              style={{
-                background: TYPE_COLORS[strategy.type] ?? "#444",
-                color: "#0a0a0a",
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "2px 8px",
-                borderRadius: 4,
-                fontFamily: "monospace",
-              }}
-            >
-              {strategy.type}
-            </span>
-          </div>
-          <p style={{ color: "#aaa", fontSize: 14, marginBottom: 16 }}>{strategy.description}</p>
-
-          <p style={{ fontSize: 13, color: "#f5f5f5", marginBottom: 16 }}>
-            <span style={{ color: "#666", marginRight: 8 }}>Signal logic:</span>
-            {strategy.signal_logic}
-          </p>
-
-          {Object.keys(strategy.parameters).length > 0 && (
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 13,
-                fontFamily: "monospace",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th
-                    style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}
-                  >
-                    Parameter
-                  </th>
-                  <th
-                    style={{ textAlign: "left", color: "#555", fontWeight: 500, paddingBottom: 6 }}
-                  >
-                    Value
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(strategy.parameters).map(([k, v]) => (
-                  <tr key={k}>
-                    <td style={{ padding: "4px 0", color: "#888" }}>{k}</td>
-                    <td style={{ padding: "4px 0", color: "#e8ff47" }}>{String(v)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {/* ── Evaluator ── */}
-      {strategy && (
-        <section style={{ maxWidth: 720, marginBottom: 40 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Backtest</h2>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-            <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
-                Symbol
-              </label>
-              <input
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                style={{
-                  background: "#111",
-                  border: "1px solid #222",
-                  borderRadius: 6,
-                  color: "#f5f5f5",
-                  padding: "8px 12px",
-                  fontSize: 14,
-                  width: 100,
-                  fontFamily: "monospace",
-                  outline: "none",
-                }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
-                Period
-              </label>
-              <select
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-                style={{
-                  background: "#111",
-                  border: "1px solid #222",
-                  borderRadius: 6,
-                  color: "#f5f5f5",
-                  padding: "8px 12px",
-                  fontSize: 14,
-                  fontFamily: "monospace",
-                  outline: "none",
-                }}
-              >
-                {["3mo", "6mo", "1y", "2y"].map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>
-                Capital ($)
-              </label>
-              <input
-                value={capital}
-                onChange={(e) => setCapital(e.target.value)}
-                type="number"
-                style={{
-                  background: "#111",
-                  border: "1px solid #222",
-                  borderRadius: 6,
-                  color: "#f5f5f5",
-                  padding: "8px 12px",
-                  fontSize: 14,
-                  width: 120,
-                  fontFamily: "monospace",
-                  outline: "none",
-                }}
-              />
-            </div>
-          </div>
-
-          <button
-            onClick={handleEvaluate}
-            disabled={evaluating}
-            style={{
-              background: evaluating ? "#333" : "#e8ff47",
-              color: evaluating ? "#666" : "#0a0a0a",
-              border: "none",
-              borderRadius: 6,
-              padding: "10px 24px",
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: evaluating ? "not-allowed" : "pointer",
-            }}
-          >
-            {evaluating ? (
-              <>
-                <span className="spinner" />
-                Running backtest
-                <span className="pulse-dots" style={{ marginLeft: 4 }}>
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </>
-            ) : (
-              "Run Backtest"
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        {/* ── Left: chat ── */}
+        <div style={{ ...card, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            {messages.length === 0 && (
+              <div style={{ color: "#555", fontSize: 13 }}>
+                Try: “which was the most traded equity today” or “buy SPY when it breaks the 20-day
+                high on 1.5× volume”.
+              </div>
             )}
-          </button>
-
-          {evalError && (
-            <p style={{ color: "#ff4747", fontSize: 13, marginTop: 12 }}>{evalError}</p>
-          )}
-        </section>
-      )}
-
-      {/* ── Results ── */}
-      {result && (
-        <section style={{ maxWidth: 720 }}>
-          {/* Metric cards */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 12,
-              marginBottom: 32,
-            }}
-          >
-            {[
-              {
-                label: "Total Return",
-                value: `${result.total_return_pct.toFixed(2)}%`,
-                highlight: positive,
-              },
-              {
-                label: "Sharpe Ratio",
-                value: result.sharpe_ratio.toFixed(2),
-                highlight: result.sharpe_ratio > 1,
-              },
-              {
-                label: "Max Drawdown",
-                value: `${result.max_drawdown_pct.toFixed(2)}%`,
-                highlight: false,
-                negative: true,
-              },
-              {
-                label: "Win Rate",
-                value: `${result.win_rate.toFixed(1)}%`,
-                highlight: result.win_rate > 50,
-              },
-            ].map(({ label, value, highlight, negative }) => (
-              <div
-                key={label}
-                style={{
-                  background: "#111",
-                  border: "1px solid #222",
-                  borderRadius: 8,
-                  padding: "16px 14px",
-                }}
-              >
-                <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>{label}</div>
+            {messages.map((m, i) => (
+              <div key={i} style={{ marginBottom: 14 }}>
                 <div
                   style={{
-                    fontSize: 22,
-                    fontWeight: 700,
-                    fontFamily: "monospace",
-                    color: negative ? "#ff4747" : highlight ? "#e8ff47" : "#f5f5f5",
+                    color: m.role === "user" ? ACCENT : "#777",
+                    fontSize: 11,
+                    marginBottom: 3,
                   }}
                 >
-                  {value}
+                  {m.role === "user" ? "You" : "Assistant"}
+                </div>
+                <div
+                  style={{ fontSize: 14, color: "#eee", whiteSpace: "pre-wrap", lineHeight: 1.5 }}
+                >
+                  {m.content}
                 </div>
               </div>
             ))}
+            {busy && <div style={{ color: "#777", fontSize: 13 }}>…thinking</div>}
+            <div ref={chatEnd} />
           </div>
-
-          {/* Equity curve */}
-          <div
-            style={{
-              background: "#111",
-              border: "1px solid #222",
-              borderRadius: 10,
-              padding: 20,
-              marginBottom: 24,
-            }}
-          >
-            <div style={{ fontSize: 13, color: "#555", marginBottom: 12 }}>Equity Curve</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={equityData}>
-                <XAxis dataKey="i" hide />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                  style={{ fontSize: 11, fill: "#555", fontFamily: "monospace" }}
-                  width={55}
-                />
-                <Tooltip
-                  formatter={(v: number) => [`$${v.toFixed(2)}`, "Equity"]}
-                  contentStyle={{
-                    background: "#1a1a1a",
-                    border: "1px solid #333",
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ display: "none" }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke={positive ? "#e8ff47" : "#ff4747"}
-                  dot={false}
-                  strokeWidth={1.5}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Trade log */}
-          {result.signals.length > 0 && (
-            <div
+          <div style={{ borderTop: "1px solid #222", padding: 12, display: "flex", gap: 8 }}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder="Message…"
+              rows={2}
               style={{
-                background: "#111",
-                border: "1px solid #222",
-                borderRadius: 10,
-                padding: 20,
+                flex: 1,
+                background: "#0a0a0a",
+                color: "#eee",
+                border: "1px solid #2a2a2a",
+                borderRadius: 6,
+                padding: 8,
+                fontFamily: "inherit",
+                fontSize: 13,
+                resize: "none",
+              }}
+            />
+            <button
+              onClick={() => void send()}
+              disabled={busy}
+              style={{
+                background: ACCENT,
+                color: "#0a0a0a",
+                border: "none",
+                borderRadius: 6,
+                padding: "0 16px",
+                fontWeight: 700,
+                cursor: busy ? "default" : "pointer",
+                opacity: busy ? 0.6 : 1,
               }}
             >
-              <div style={{ fontSize: 13, color: "#555", marginBottom: 12 }}>
-                Trade Log — {result.total_trades} trades
-              </div>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: 13,
-                  fontFamily: "monospace",
-                }}
-              >
-                <thead>
-                  <tr>
-                    {["Date", "Action", "Price", "P&L"].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: "left",
-                          color: "#444",
-                          fontWeight: 500,
-                          paddingBottom: 8,
-                          fontSize: 11,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.signals.map((s, i) => (
-                    <tr key={i} style={{ borderTop: "1px solid #1a1a1a" }}>
-                      <td style={{ padding: "6px 0", color: "#666" }}>{s.date}</td>
-                      <td
-                        style={{
-                          padding: "6px 0",
-                          color: s.action === "BUY" ? "#e8ff47" : "#ff9447",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {s.action}
-                      </td>
-                      <td style={{ padding: "6px 0", color: "#f5f5f5" }}>${s.price.toFixed(2)}</td>
-                      <td
-                        style={{
-                          padding: "6px 0",
-                          color: s.pnl == null ? "#444" : s.pnl >= 0 ? "#e8ff47" : "#ff4747",
-                        }}
-                      >
-                        {s.pnl != null ? `${s.pnl >= 0 ? "+" : ""}$${s.pnl.toFixed(2)}` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              Send
+            </button>
+          </div>
+        </div>
+
+        {/* ── Right: artifact / details ── */}
+        <div style={{ ...card, overflowY: "auto", padding: 16, minHeight: 0 }}>
+          {!artifact && (
+            <div style={{ color: "#555", fontSize: 13 }}>
+              The result of your conversation shows up here.
             </div>
           )}
-        </section>
-      )}
+
+          {artifact?.type === "text" && (
+            <div style={{ color: "#bbb", fontSize: 14, whiteSpace: "pre-wrap" }}>
+              {String(artifact.data ?? "")}
+            </div>
+          )}
+          {artifact?.type === "market_data" && (
+            <MarketDataView data={artifact.data as Record<string, unknown>} />
+          )}
+          {artifact?.type === "backtest" && (
+            <BacktestView data={artifact.data as Record<string, unknown>} />
+          )}
+
+          {artifact?.type === "strategy" && draft && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <h3 style={{ fontSize: 16 }}>{draft.name}</h3>
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: "2px 8px",
+                    border: `1px solid ${ACCENT}`,
+                    borderRadius: 4,
+                    color: ACCENT,
+                  }}
+                >
+                  {draft.type}
+                </span>
+              </div>
+              <p style={{ color: "#aaa", fontSize: 13, marginBottom: 8 }}>{draft.description}</p>
+              <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>Signal logic</div>
+              <p style={{ color: "#ccc", fontSize: 13, marginBottom: 10 }}>{draft.signal_logic}</p>
+              <pre
+                style={{
+                  fontSize: 12,
+                  color: "#999",
+                  background: "#0a0a0a",
+                  padding: 10,
+                  borderRadius: 6,
+                  overflowX: "auto",
+                }}
+              >
+                {JSON.stringify({ parameters: draft.parameters, filters: draft.filters }, null, 2)}
+              </pre>
+
+              {/* Run config */}
+              <div style={{ borderTop: "1px solid #222", marginTop: 14, paddingTop: 12 }}>
+                <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>
+                  When &amp; how to run
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    fontSize: 13,
+                  }}
+                >
+                  <label>
+                    Mode{" "}
+                    <select value={mode} onChange={(e) => setMode(e.target.value)} style={sel}>
+                      {MODES.map((m) => (
+                        <option key={m}>{m}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Symbol{" "}
+                    <input
+                      value={symbol}
+                      onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                      style={{ ...sel, width: 70 }}
+                    />
+                  </label>
+                  <label>
+                    Schedule{" "}
+                    <select
+                      value={scheduleKind}
+                      onChange={(e) => setScheduleKind(e.target.value)}
+                      style={sel}
+                    >
+                      <option value="manual">manual</option>
+                      <option value="interval">interval</option>
+                      <option value="daily">daily</option>
+                    </select>
+                  </label>
+                  {scheduleKind === "interval" && (
+                    <label>
+                      every{" "}
+                      <input
+                        type="number"
+                        value={intervalMin}
+                        onChange={(e) => setIntervalMin(Number(e.target.value))}
+                        style={{ ...sel, width: 60 }}
+                      />
+                      min
+                    </label>
+                  )}
+                  {scheduleKind === "daily" && (
+                    <label>
+                      at(ET){" "}
+                      <input
+                        value={runAtEt}
+                        onChange={(e) => setRunAtEt(e.target.value)}
+                        style={{ ...sel, width: 70 }}
+                      />
+                    </label>
+                  )}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 13 }}>
+                  Backtest periods:{" "}
+                  {PERIODS.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() =>
+                        setPeriods((cur) =>
+                          cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]
+                        )
+                      }
+                      style={{
+                        marginRight: 6,
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        background: periods.includes(p) ? ACCENT : "#161616",
+                        color: periods.includes(p) ? "#0a0a0a" : "#999",
+                        border: "1px solid #2a2a2a",
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => void saveStrategy()}
+                  style={{
+                    marginTop: 14,
+                    background: ACCENT,
+                    color: "#0a0a0a",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "8px 18px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Save strategy
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Saved strategies ── */}
+      <div style={{ marginTop: 14, maxHeight: "30vh", overflowY: "auto" }}>
+        <h2 style={{ fontSize: 13, color: "#777", marginBottom: 8 }}>Saved strategies</h2>
+        {saved.length === 0 && (
+          <div style={{ color: "#555", fontSize: 13 }}>
+            None yet — build one in chat and save it.
+          </div>
+        )}
+        {saved.map((s) => (
+          <div key={s.id}>
+            <div
+              style={{
+                ...card,
+                padding: "10px 14px",
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() => void toggleEnabled(s)}
+                title={s.enabled ? "Disable" : "Enable"}
+                style={{
+                  width: 44,
+                  height: 22,
+                  borderRadius: 11,
+                  border: "none",
+                  cursor: "pointer",
+                  background: s.enabled ? "#22c55e" : "#333",
+                  position: "relative",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    left: s.enabled ? 24 : 2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "#fff",
+                    transition: "left .15s",
+                  }}
+                />
+              </button>
+              <strong style={{ fontSize: 14 }}>{s.name}</strong>
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: "2px 7px",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 4,
+                  color: "#aaa",
+                }}
+              >
+                {s.mode}
+              </span>
+              <span style={{ fontSize: 11, color: "#666" }}>{s.symbols.join(", ") || "—"}</span>
+              <span style={{ fontSize: 11, color: "#555" }}>
+                {s.last_run_at
+                  ? `last run ${new Date(s.last_run_at).toLocaleString()}`
+                  : "never run"}
+              </span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <button onClick={() => void backtestSaved(s)} style={btn}>
+                  Backtest
+                </button>
+                <button onClick={() => void viewRuns(s)} style={btn}>
+                  Runs
+                </button>
+                <button onClick={() => void removeStrategy(s)} style={{ ...btn, color: "#ef4444" }}>
+                  Delete
+                </button>
+              </div>
+            </div>
+            {runsFor?.id === s.id && (
+              <div style={{ ...card, padding: 12, marginBottom: 8 }}>
+                <div style={{ color: "#777", fontSize: 12, marginBottom: 6 }}>
+                  Run history (observability)
+                </div>
+                <table
+                  style={{
+                    width: "100%",
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    borderCollapse: "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ color: "#777" }}>
+                      {["time", "type", "status", "src", "period", "ms", "detail"].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "4px 8px" }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runsFor.runs.map((r) => (
+                      <tr key={r.id} style={{ borderTop: "1px solid #1a1a1a" }}>
+                        <td style={tdc}>{new Date(r.created_at).toLocaleTimeString()}</td>
+                        <td style={tdc}>{r.run_type}</td>
+                        <td style={{ ...tdc, color: r.status === "ok" ? "#22c55e" : "#ef4444" }}>
+                          {r.status}
+                        </td>
+                        <td style={tdc}>{r.source}</td>
+                        <td style={tdc}>{r.period ?? "—"}</td>
+                        <td style={tdc}>{r.duration_ms ?? "—"}</td>
+                        <td style={{ ...tdc, color: "#888" }}>
+                          {r.metrics
+                            ? `ret ${(r.metrics.total_return_pct as number)?.toFixed?.(1) ?? "—"}%`
+                            : (r.detail ?? "")}
+                        </td>
+                      </tr>
+                    ))}
+                    {runsFor.runs.length === 0 && (
+                      <tr>
+                        <td style={tdc} colSpan={7}>
+                          No runs yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
+
+const sel: React.CSSProperties = {
+  background: "#0a0a0a",
+  color: "#eee",
+  border: "1px solid #2a2a2a",
+  borderRadius: 4,
+  padding: "3px 6px",
+  marginLeft: 4,
+};
+const btn: React.CSSProperties = {
+  background: "#161616",
+  color: "#bbb",
+  border: "1px solid #2a2a2a",
+  borderRadius: 5,
+  padding: "4px 12px",
+  fontSize: 12,
+  cursor: "pointer",
+};
+const tdc: React.CSSProperties = { padding: "4px 8px" };
