@@ -17,7 +17,9 @@ from app.signals.engine import HORIZONS, compute_all
 logger = logging.getLogger(__name__)
 
 QUOTE_URL = "https://finnhub.io/api/v1/quote"
-_PRICE_HISTORY = 60  # samples (~1h) used for classification
+# Samples used for classification — enough context for the 1-day horizon as the
+# series builds (~a full trading day of 1-min ticks).
+_PRICE_HISTORY = 400
 
 
 def signals_enabled() -> bool:
@@ -53,9 +55,15 @@ async def _recent_prices(conn: asyncpg.Connection, n: int) -> list[float]:
     return [float(r["price"]) for r in reversed(rows)]
 
 
-def _results_to_signals(results: dict[int, tuple[str, float]]) -> list[dict[str, Any]]:
+def _results_to_signals(results: dict[int, tuple[str, float, str]]) -> list[dict[str, Any]]:
     return [
-        {"horizon_min": h, "label": results[h][0], "confidence": results[h][1]} for h in HORIZONS
+        {
+            "horizon_min": h,
+            "label": results[h][0],
+            "confidence": results[h][1],
+            "reason": results[h][2],
+        }
+        for h in HORIZONS
     ]
 
 
@@ -67,36 +75,52 @@ async def tick_once(pool: asyncpg.Pool) -> dict[str, Any] | None:
     async with pool.acquire() as conn:
         series = await _recent_prices(conn, _PRICE_HISTORY)
         series.append(price)
-        results = compute_all(series)
+        r = compute_all(series)
         ts = await conn.fetchval(
             """
             INSERT INTO spy_signals
-                (price, sig_5m, conf_5m, sig_10m, conf_10m, sig_20m, conf_20m)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (price, sig_5m, conf_5m, reason_5m, sig_10m, conf_10m, reason_10m,
+                 sig_20m, conf_20m, reason_20m, sig_1d, conf_1d, reason_1d)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING ts
             """,
             price,
-            results[5][0],
-            results[5][1],
-            results[10][0],
-            results[10][1],
-            results[20][0],
-            results[20][1],
+            r[5][0],
+            r[5][1],
+            r[5][2],
+            r[10][0],
+            r[10][1],
+            r[10][2],
+            r[20][0],
+            r[20][1],
+            r[20][2],
+            r[1440][0],
+            r[1440][1],
+            r[1440][2],
         )
-    return {"ts": ts, "price": price, "signals": _results_to_signals(results)}
+    return {"ts": ts, "price": price, "signals": _results_to_signals(r)}
 
 
 # ── Query helpers (used by the router) ────────────────────────────────────────
 
 
 def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
+    def sig(h: int, sk: str, ck: str, rk: str) -> dict[str, Any]:
+        return {
+            "horizon_min": h,
+            "label": row[sk],
+            "confidence": float(row[ck] or 0),
+            "reason": row[rk] or "",
+        }
+
     return {
         "ts": row["ts"],
         "price": float(row["price"]),
         "signals": [
-            {"horizon_min": 5, "label": row["sig_5m"], "confidence": float(row["conf_5m"] or 0)},
-            {"horizon_min": 10, "label": row["sig_10m"], "confidence": float(row["conf_10m"] or 0)},
-            {"horizon_min": 20, "label": row["sig_20m"], "confidence": float(row["conf_20m"] or 0)},
+            sig(5, "sig_5m", "conf_5m", "reason_5m"),
+            sig(10, "sig_10m", "conf_10m", "reason_10m"),
+            sig(20, "sig_20m", "conf_20m", "reason_20m"),
+            sig(1440, "sig_1d", "conf_1d", "reason_1d"),
         ],
     }
 

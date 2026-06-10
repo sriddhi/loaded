@@ -4,6 +4,7 @@ SPY signal engine — a transparent, deterministic heuristic. NOT a prediction.
 Given a series of recent 1-minute prices, classify the likely direction over the
 next `horizon` minutes as one of:
   bullish | bearish | bull_trap | bear_trap | neutral
+and return a short reason explaining the rating.
 
 Logic (per horizon):
 - momentum = return over a horizon-scaled lookback window;
@@ -16,7 +17,8 @@ Logic (per horizon):
 
 from __future__ import annotations
 
-HORIZONS: list[int] = [5, 10, 20]
+# 5m, 10m, 20m, and 1 day (1440 min).
+HORIZONS: list[int] = [5, 10, 20, 1440]
 
 # Base move (fraction) that counts as directional over a 1-minute horizon; scales
 # with √horizon because volatility grows with time.
@@ -27,24 +29,32 @@ def _threshold(horizon_min: int) -> float:
     return float(_BASE_THRESHOLD * (horizon_min**0.5))
 
 
-def classify(prices: list[float], horizon_min: int) -> tuple[str, float]:
-    """Return (label, confidence in [0,1]) for the next `horizon_min` minutes.
+def _fmt_horizon(horizon_min: int) -> str:
+    if horizon_min >= 1440:
+        return "1 day"
+    if horizon_min >= 60:
+        return f"{horizon_min // 60}h"
+    return f"{horizon_min}m"
+
+
+def classify(prices: list[float], horizon_min: int) -> tuple[str, float, str]:
+    """Return (label, confidence in [0,1], reason) for the next `horizon_min`.
 
     `prices` are most-recent-last 1-minute samples.
     """
+    hz = _fmt_horizon(horizon_min)
     n = len(prices)
     if n < 4:
-        return "neutral", 0.0
+        return "neutral", 0.0, "Not enough price history yet."
 
     lookback = min(n - 1, max(3, horizon_min))
     window = prices[-(lookback + 1) :]
     start, last = window[0], window[-1]
     if start <= 0:
-        return "neutral", 0.0
+        return "neutral", 0.0, "No valid reference price."
 
     ret = (last - start) / start
     hi, lo = max(window), min(window)
-    # Index (within window) of the most recent occurrence of the extreme.
     idx_hi = len(window) - 1 - window[::-1].index(hi)
     idx_lo = len(window) - 1 - window[::-1].index(lo)
     drawdown_from_hi = (last - hi) / hi if hi > 0 else 0.0  # <= 0
@@ -55,18 +65,42 @@ def classify(prices: list[float], horizon_min: int) -> tuple[str, float]:
     recent = max(2, len(window) // 4)
     made_recent_high = idx_hi >= len(window) - 1 - recent
     made_recent_low = idx_lo >= len(window) - 1 - recent
+    thr_pct = thr * 100
 
-    # Failed breakout: pushed to a recent high, now falling away from it.
     if made_recent_high and drawdown_from_hi <= -trap_thr:
-        return "bull_trap", _conf(abs(drawdown_from_hi), trap_thr)
-    # Failed breakdown: dropped to a recent low, now rallying off it.
+        return (
+            "bull_trap",
+            _conf(abs(drawdown_from_hi), trap_thr),
+            f"Pushed to a recent high then fell {abs(drawdown_from_hi) * 100:.2f}% — "
+            f"a failed breakout suggests downside risk over the next {hz}.",
+        )
     if made_recent_low and rally_from_lo >= trap_thr:
-        return "bear_trap", _conf(rally_from_lo, trap_thr)
+        return (
+            "bear_trap",
+            _conf(rally_from_lo, trap_thr),
+            f"Dropped to a recent low then rallied {rally_from_lo * 100:.2f}% — "
+            f"a failed breakdown suggests upside over the next {hz}.",
+        )
     if ret >= thr:
-        return "bullish", _conf(ret, thr)
+        return (
+            "bullish",
+            _conf(ret, thr),
+            f"Up {ret * 100:.2f}% recently, above the {thr_pct:.2f}% move that reads "
+            f"directional for the next {hz}.",
+        )
     if ret <= -thr:
-        return "bearish", _conf(abs(ret), thr)
-    return "neutral", _conf(abs(ret), thr)
+        return (
+            "bearish",
+            _conf(abs(ret), thr),
+            f"Down {abs(ret) * 100:.2f}% recently, beyond the {thr_pct:.2f}% bar for "
+            f"the next {hz}.",
+        )
+    return (
+        "neutral",
+        _conf(abs(ret), thr),
+        f"Only {ret * 100:+.2f}% move — inside the ±{thr_pct:.2f}% band, so no clear "
+        f"edge over the next {hz}.",
+    )
 
 
 def _conf(magnitude: float, threshold: float) -> float:
@@ -75,5 +109,5 @@ def _conf(magnitude: float, threshold: float) -> float:
     return round(min(1.0, magnitude / (threshold * 4)), 3)
 
 
-def compute_all(prices: list[float]) -> dict[int, tuple[str, float]]:
+def compute_all(prices: list[float]) -> dict[int, tuple[str, float, str]]:
     return {h: classify(prices, h) for h in HORIZONS}

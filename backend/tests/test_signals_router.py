@@ -15,9 +15,15 @@ _SIGNAL = {
     "ts": datetime.now(UTC),
     "price": 512.34,
     "signals": [
-        {"horizon_min": 5, "label": "bullish", "confidence": 0.6},
-        {"horizon_min": 10, "label": "neutral", "confidence": 0.1},
-        {"horizon_min": 20, "label": "bear_trap", "confidence": 0.4},
+        {"horizon_min": 5, "label": "bullish", "confidence": 0.6, "reason": "Up 0.3%."},
+        {"horizon_min": 10, "label": "neutral", "confidence": 0.1, "reason": "Flat."},
+        {"horizon_min": 20, "label": "bear_trap", "confidence": 0.4, "reason": "Failed breakdown."},
+        {
+            "horizon_min": 1440,
+            "label": "neutral",
+            "confidence": 0.0,
+            "reason": "No edge over 1 day.",
+        },
     ],
 }
 

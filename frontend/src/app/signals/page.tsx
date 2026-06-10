@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
 
-type HorizonSignal = { horizon_min: number; label: string; confidence: number };
+type HorizonSignal = { horizon_min: number; label: string; confidence: number; reason: string };
 type SpySignal = { ts: string; price: number; signals: HorizonSignal[] };
 type History = { signals: SpySignal[] };
 
@@ -25,6 +25,16 @@ const LABEL_TEXT: Record<string, string> = {
   neutral: "Neutral",
 };
 
+const HZ = [5, 10, 20, 1440];
+
+function hzLabel(h: number): string {
+  return h >= 1440 ? "1 day" : `${h} min`;
+}
+
+function hzShort(h: number): string {
+  return h >= 1440 ? "1d" : `${h}m`;
+}
+
 function color(label: string): string {
   return LABEL_COLOR[label] ?? "#777";
 }
@@ -34,20 +44,24 @@ function Badge({ s }: { s: HorizonSignal }): React.JSX.Element {
   return (
     <div
       style={{
-        flex: 1,
         background: "#111",
         border: `1px solid ${c}`,
         borderRadius: 10,
         padding: "16px 18px",
       }}
     >
-      <div style={{ color: "#777", fontSize: 12 }}>next {s.horizon_min} min</div>
+      <div style={{ color: "#777", fontSize: 12 }}>next {hzLabel(s.horizon_min)}</div>
       <div style={{ color: c, fontSize: 22, fontWeight: 800, marginTop: 6 }}>
         {LABEL_TEXT[s.label] ?? s.label}
       </div>
       <div style={{ color: "#555", fontSize: 11, marginTop: 4 }}>
         confidence {(s.confidence * 100).toFixed(0)}%
       </div>
+      {s.reason && (
+        <div style={{ color: "#999", fontSize: 11, marginTop: 10, lineHeight: 1.4 }}>
+          {s.reason}
+        </div>
+      )}
     </div>
   );
 }
@@ -149,7 +163,14 @@ export default function SignalsPage(): React.JSX.Element {
 
       {latest ? (
         <>
-          <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 12,
+              marginBottom: 8,
+            }}
+          >
             {latest.signals.map((s) => (
               <Badge key={s.horizon_min} s={s} />
             ))}
@@ -186,9 +207,11 @@ export default function SignalsPage(): React.JSX.Element {
             <tr style={{ color: "#777" }}>
               <th style={{ textAlign: "left", padding: "10px 14px" }}>Time</th>
               <th style={{ textAlign: "right", padding: "10px 14px" }}>Price</th>
-              <th style={{ textAlign: "center", padding: "10px 14px" }}>5m</th>
-              <th style={{ textAlign: "center", padding: "10px 14px" }}>10m</th>
-              <th style={{ textAlign: "center", padding: "10px 14px" }}>20m</th>
+              {HZ.map((h) => (
+                <th key={h} style={{ textAlign: "center", padding: "10px 14px" }}>
+                  {hzShort(h)}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -201,7 +224,13 @@ export default function SignalsPage(): React.JSX.Element {
                 {row.signals.map((s) => (
                   <td
                     key={s.horizon_min}
-                    style={{ padding: "8px 14px", textAlign: "center", color: color(s.label) }}
+                    title={s.reason}
+                    style={{
+                      padding: "8px 14px",
+                      textAlign: "center",
+                      color: color(s.label),
+                      cursor: s.reason ? "help" : "default",
+                    }}
                   >
                     {LABEL_TEXT[s.label] ?? s.label}
                   </td>
@@ -210,7 +239,7 @@ export default function SignalsPage(): React.JSX.Element {
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: 14, color: "#555" }}>
+                <td colSpan={6} style={{ padding: 14, color: "#555" }}>
                   No history yet.
                 </td>
               </tr>

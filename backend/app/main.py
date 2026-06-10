@@ -457,6 +457,13 @@ CREATE TABLE IF NOT EXISTS spy_signals (
     conf_20m  NUMERIC(4,3)
 );
 CREATE INDEX IF NOT EXISTS idx_spy_signals_ts ON spy_signals(ts DESC);
+-- 1-day horizon + per-rating reasons (added after the original 5/10/20m columns).
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS sig_1d TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS conf_1d NUMERIC(4,3);
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_5m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_10m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_20m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_1d TEXT;
 """
 
 HYPERTABLES_MIGRATIONS = """

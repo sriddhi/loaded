@@ -11,6 +11,7 @@ class HorizonSignal(BaseModel):
     horizon_min: int
     label: str
     confidence: float
+    reason: str = ""
 
 
 class SpySignal(BaseModel):
