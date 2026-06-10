@@ -131,6 +131,18 @@
       "sha256": "cba7304ce9d378c76d4933649eef920c884a31d76bfc81887fc2a3a8476ce438",
       "locked_at": "2026-06-10T03:10:11Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/signals/spy_signals_generator.md",
+      "sha256": "fc4b708ef06ee52bd98383395fba32e0377395722dd0a92fdd2adce822f87ba1",
+      "locked_at": "2026-06-10T15:38:12Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/signals/spy_signals_evaluator.md",
+      "sha256": "0c1784374157a8284053e1bbd8e8ed6c34da1991a0ae600e50bea2970ecb033f",
+      "locked_at": "2026-06-10T15:38:14Z",
+      "version": "1.0"
     }
   ]
 }

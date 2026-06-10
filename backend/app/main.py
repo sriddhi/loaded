@@ -21,6 +21,8 @@ from app.fundamentals.refresh import pending_watch_count
 from app.fundamentals.router import router as fundamentals_router
 from app.fundamentals.scheduler import FundamentalsScheduler
 from app.marketdata.router import router as marketdata_router
+from app.signals.job import SpySignalJob, signals_enabled
+from app.signals.router import router as signals_router
 from app.strategies.router import router as strategies_router
 from app.trading.router import router as trading_router
 from fastapi import Depends, FastAPI
@@ -441,6 +443,20 @@ CREATE TABLE IF NOT EXISTS earnings_watch (
 );
 CREATE INDEX IF NOT EXISTS idx_earnings_watch_status
     ON earnings_watch(status);
+
+-- ── Signals module: SPY heuristic signal ticks ────────────────────────────────
+CREATE TABLE IF NOT EXISTS spy_signals (
+    id        SERIAL PRIMARY KEY,
+    ts        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    price     NUMERIC(12,4),
+    sig_5m    TEXT,
+    conf_5m   NUMERIC(4,3),
+    sig_10m   TEXT,
+    conf_10m  NUMERIC(4,3),
+    sig_20m   TEXT,
+    conf_20m  NUMERIC(4,3)
+);
+CREATE INDEX IF NOT EXISTS idx_spy_signals_ts ON spy_signals(ts DESC);
 """
 
 HYPERTABLES_MIGRATIONS = """
@@ -602,6 +618,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.fundamentals_task = asyncio.create_task(scheduler.run())
     print("[startup] Fundamentals refresh scheduler started.")
 
+    # ── SPY signal job (every-minute heuristic indicator) ─────────────────────
+    app.state.signal_job = None
+    app.state.signal_task = None
+    if signals_enabled():
+        signal_job = SpySignalJob(pool)
+        app.state.signal_job = signal_job
+        app.state.signal_task = asyncio.create_task(signal_job.run())
+        print("[startup] SPY signal job started.")
+    else:
+        print("[startup] FINNHUB_API_KEY not set — SPY signal job disabled.")
+
     yield
 
     if app.state.finnhub_client is not None:
@@ -614,6 +641,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.fundamentals_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await app.state.fundamentals_task
+    if app.state.signal_job is not None:
+        await app.state.signal_job.stop()
+    if app.state.signal_task is not None:
+        app.state.signal_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.signal_task
     await pool.close()
 
 
@@ -651,6 +684,7 @@ app.include_router(marketdata_router, dependencies=_auth_dep)
 app.include_router(agents_router, prefix="/agents", dependencies=_auth_dep)
 app.include_router(trading_router, prefix="/trading", dependencies=_auth_dep)
 app.include_router(fundamentals_router, dependencies=_auth_dep)
+app.include_router(signals_router, dependencies=_auth_dep)
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
