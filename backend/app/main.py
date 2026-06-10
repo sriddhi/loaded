@@ -492,15 +492,21 @@ app = FastAPI(title="Loaded API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(DocsAuthMiddleware)
 
+# Fail closed: never combine a wildcard origin with credentials (the browser
+# rejects it, and it would let any site make authenticated cross-origin calls).
+# When ALLOWED_ORIGINS is unset, default to the local dev frontend only.
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "")
-_allow_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
+_allow_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or [
+    "http://localhost:3000"
+]
+_allow_credentials = "*" not in _allow_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allow_origins,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
 )
 
 # ── Rate limiter ───────────────────────────────────────────────────────────────

@@ -10,8 +10,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import asyncpg
 import httpx
@@ -35,10 +36,12 @@ from app.trading.strategy import (
 
 logger = logging.getLogger(__name__)
 
-# ── ET offset (UTC-4 during EDT, UTC-5 during EST) ────────────────────────────
-# We use a fixed UTC-4 offset (EDT) for simplicity.
-# Production: replace with zoneinfo.ZoneInfo("America/New_York")
-ET_OFFSET = timezone(timedelta(hours=-4))
+# ── Market timezone ───────────────────────────────────────────────────────────
+# Backend runs in UTC; the market clock is a separate, configurable zone.
+# Defaults to US equity hours; DST is handled automatically by zoneinfo.
+# Override with MARKET_TIMEZONE (any IANA name, e.g. "America/New_York").
+MARKET_TIMEZONE = os.getenv("MARKET_TIMEZONE", "America/New_York")
+MARKET_TZ = ZoneInfo(MARKET_TIMEZONE)
 
 TICK_INTERVAL_SECONDS = 300  # 5 minutes
 MARKET_OPEN_HOUR = 9
@@ -49,7 +52,8 @@ ORB_END_MINUTE = 0
 
 
 def _now_et() -> datetime:
-    return datetime.now(tz=ET_OFFSET)
+    """Current time in the configured market timezone (DST-aware)."""
+    return datetime.now(tz=MARKET_TZ)
 
 
 def _alpaca_headers() -> dict[str, str]:
@@ -192,6 +196,11 @@ class TradingJob:
             trading_state.last_tick_at = datetime.utcnow()
 
         spy_price = await self._fetch_spy_price()
+        if spy_price is None:
+            # Price unavailable this tick — skip rather than act on a bad/zero
+            # value, which would otherwise fabricate a downside breakout signal.
+            log_error("skipping tick: SPY price unavailable")
+            return
 
         # Phase 1: ORB capture window (9:30–10:00)
         orb_window_over = now.hour > ORB_END_HOUR or (
@@ -512,8 +521,8 @@ class TradingJob:
 
     # ── Data fetching ─────────────────────────────────────────────────────────
 
-    async def _fetch_spy_price(self) -> float:
-        """Fetch latest SPY trade price."""
+    async def _fetch_spy_price(self) -> float | None:
+        """Fetch latest SPY trade price. Returns None if unavailable (caller skips)."""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
@@ -522,9 +531,10 @@ class TradingJob:
                 )
             if resp.status_code == 200:
                 return float(resp.json()["trade"]["p"])
+            log_error(f"fetch_spy_price: HTTP {resp.status_code}")
         except Exception as exc:
             log_error(f"fetch_spy_price: {exc}")
-        return 0.0
+        return None
 
     async def _fetch_spy_bars(self, start: datetime, end: datetime) -> list[dict]:
         """Fetch 1-min SPY bars between start and end."""
