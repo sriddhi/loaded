@@ -15,15 +15,27 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import anthropic
+import httpx
 from app.strategies.models import Artifact, ChatMessage, ChatResponse, StrategyConfig
 
 log = logging.getLogger(__name__)
 
 MODEL = "claude-opus-4-5"
 MAX_TOOL_ITERATIONS = 5
+
+
+def _provider() -> str:
+    """Which chat backend to use: 'api' (Anthropic key) or 'claude_code' (bridge)."""
+    return os.getenv("STRATEGY_CHAT_PROVIDER", "api").strip().lower()
+
+
+def _bridge_url() -> str:
+    return os.getenv("CLAUDE_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
+
 
 SYSTEM_PROMPT = """You are Loaded's trading assistant. You help users explore the \
 market and design/iterate quantitative trading strategies.
@@ -104,6 +116,9 @@ TOOLS: list[dict[str, Any]] = [
 
 
 def chat_enabled() -> bool:
+    # claude_code uses the host bridge (subscription) — no API key required.
+    if _provider() == "claude_code":
+        return True
     return bool(os.getenv("ANTHROPIC_API_KEY"))
 
 
@@ -244,8 +259,102 @@ def _anthropic_call(api_messages: list[dict[str, Any]]) -> Any:
 
 
 async def chat(messages: list[ChatMessage]) -> ChatResponse:
-    """Run one chat turn (with an internal tool-use loop). Returns reply + artifact."""
-    if not chat_enabled():
+    """Run one chat turn. Dispatches to the configured provider."""
+    if _provider() == "claude_code":
+        return await _chat_claude_code(messages)
+    return await _chat_api(messages)
+
+
+# ── Provider: claude_code (host bridge → local subscription) ──────────────────
+
+_CC_SYSTEM = (
+    SYSTEM_PROMPT + "\n\nWhen you propose or edit a strategy, include a fenced ```json code block "
+    "containing an object with keys: name, description, type (one of MOMENTUM, "
+    "BREAKOUT, MEAN_REVERSION, CUSTOM), parameters, filters, signal_logic. Put a "
+    "one-line summary outside the block. (Live market-data tools are unavailable in "
+    "this mode — answer from general knowledge and say so if asked for live numbers.)"
+)
+
+# Capture a fenced JSON block (greedy inner to allow nested braces in the config).
+_FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
+
+
+def _flatten(messages: list[ChatMessage]) -> str:
+    lines = []
+    for m in messages:
+        who = "User" if m.role == "user" else "Assistant"
+        lines.append(f"{who}: {m.content}")
+    lines.append("Assistant:")
+    return "\n\n".join(lines)
+
+
+def _extract_strategy(text: str) -> Artifact | None:
+    match = _FENCE.search(text)
+    if not match:
+        return None
+    try:
+        # strict=False tolerates raw newlines/tabs inside string values.
+        data = json.loads(match.group(1), strict=False)
+        config = StrategyConfig(**_coerce_config(data))
+    except Exception:  # noqa: BLE001
+        return None
+    return Artifact(type="strategy", data=config.model_dump())
+
+
+def _as_text(value: Any) -> str:
+    """Flatten a value the model may have returned as an object/list into prose."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_as_text(v)}" for k, v in value.items())
+    if isinstance(value, list):
+        return "; ".join(_as_text(v) for v in value)
+    return str(value)
+
+
+def _coerce_config(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a loosely-shaped config dict to the StrategyConfig schema."""
+    out = dict(data)
+    for key in ("name", "description", "signal_logic"):
+        if key in out and not isinstance(out[key], str):
+            out[key] = _as_text(out[key])
+    for key in ("parameters", "filters"):
+        if not isinstance(out.get(key), dict):
+            out[key] = {}
+    return out
+
+
+async def _bridge_chat(system: str, prompt: str) -> str:
+    headers = {}
+    token = os.getenv("CLAUDE_BRIDGE_TOKEN", "")
+    if token:
+        headers["X-Bridge-Token"] = token
+    async with httpx.AsyncClient(timeout=200) as client:
+        resp = await client.post(
+            f"{_bridge_url()}/chat",
+            json={"system": system, "prompt": prompt},
+            headers=headers,
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(f"claude bridge {resp.status_code}: {resp.text[:300]}")
+    return str(resp.json().get("text", ""))
+
+
+async def _chat_claude_code(messages: list[ChatMessage]) -> ChatResponse:
+    text = await _bridge_chat(_CC_SYSTEM, _flatten(messages))
+    strategy = _extract_strategy(text)
+    reply = _FENCE.sub("", text).strip() if strategy else text.strip()
+    artifact = strategy or Artifact(type="text", data=reply)
+    out = list(messages) + [ChatMessage(role="assistant", content=reply)]
+    return ChatResponse(reply=reply, messages=out, artifact=artifact)
+
+
+# ── Provider: api (Anthropic key + agentic tool loop) ─────────────────────────
+
+
+async def _chat_api(messages: list[ChatMessage]) -> ChatResponse:
+    """Run one chat turn with the internal tool-use loop (Anthropic API key)."""
+    if not os.getenv("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
 
     working = _to_api_messages(messages)

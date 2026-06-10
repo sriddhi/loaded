@@ -25,7 +25,9 @@ def _tool_block(name, tool_input, block_id="t1"):
 
 @pytest.mark.asyncio
 async def test_chat_requires_api_key():
-    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+    with patch.dict(
+        os.environ, {"ANTHROPIC_API_KEY": "", "STRATEGY_CHAT_PROVIDER": "api"}, clear=False
+    ):
         assert chatmod.chat_enabled() is False
         with pytest.raises(RuntimeError):
             await chatmod.chat([ChatMessage(role="user", content="hi")])
@@ -48,7 +50,9 @@ async def test_chat_runs_tool_then_returns_strategy_artifact():
     resp2 = SimpleNamespace(stop_reason="end_turn", content=[_text_block("Here is your strategy.")])
 
     with (
-        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k"}, clear=False),
+        patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "k", "STRATEGY_CHAT_PROVIDER": "api"}, clear=False
+        ),
         patch("app.strategies.chat._anthropic_call", MagicMock(side_effect=[resp1, resp2])),
     ):
         out = await chatmod.chat([ChatMessage(role="user", content="build a breakout")])
@@ -73,7 +77,9 @@ async def test_chat_market_data_tool_branch():
         return "[]", Artifact(type="market_data", data={"title": "Most active", "rows": []})
 
     with (
-        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k"}, clear=False),
+        patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "k", "STRATEGY_CHAT_PROVIDER": "api"}, clear=False
+        ),
         patch("app.strategies.chat._anthropic_call", MagicMock(side_effect=[resp1, resp2])),
         patch("app.strategies.chat._run_tool", AsyncMock(side_effect=fake_tool)),
     ):
@@ -86,3 +92,32 @@ async def test_chat_market_data_tool_branch():
 def test_propose_strategy_validates():
     msg, art = chatmod._tool_propose_strategy({"name": "x"})  # missing required → text/error
     assert art.type == "text"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_provider_extracts_strategy_from_bridge():
+    bridge_text = (
+        "Here's a momentum strategy.\n\n"
+        '```json\n{"name":"Mo","description":"d","type":"MOMENTUM",'
+        '"parameters":{"sma_period":20},"filters":{},"signal_logic":"buy above sma"}\n```'
+    )
+    with (
+        patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
+        patch("app.strategies.chat._bridge_chat", AsyncMock(return_value=bridge_text)),
+    ):
+        assert chatmod.chat_enabled() is True
+        out = await chatmod.chat([ChatMessage(role="user", content="make a momentum strategy")])
+    assert out.artifact.type == "strategy"
+    assert out.artifact.data["name"] == "Mo"
+    assert "```" not in out.reply  # json block stripped from the displayed reply
+
+
+@pytest.mark.asyncio
+async def test_claude_code_provider_plain_text_answer():
+    with (
+        patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
+        patch("app.strategies.chat._bridge_chat", AsyncMock(return_value="SPY is an ETF.")),
+    ):
+        out = await chatmod.chat([ChatMessage(role="user", content="what is SPY?")])
+    assert out.artifact.type == "text"
+    assert out.reply == "SPY is an ETF."

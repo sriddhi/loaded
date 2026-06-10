@@ -42,6 +42,10 @@ services:
       ALPACA_REAL_SECRET_KEY: ${ALPACA_REAL_SECRET_KEY:-}
       ALPACA_PAPER_TRADE: ${ALPACA_PAPER_TRADE:-true}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Strategy-chat provider: 'api' (Anthropic key) or 'claude_code' (host bridge → local subscription).
+      STRATEGY_CHAT_PROVIDER: ${STRATEGY_CHAT_PROVIDER:-api}
+      CLAUDE_BRIDGE_URL: ${CLAUDE_BRIDGE_URL:-http://host.docker.internal:8787}
+      CLAUDE_BRIDGE_TOKEN: ${CLAUDE_BRIDGE_TOKEN:-}
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
       FUNDAMENTALS_TTL_TRACKED_DAYS: ${FUNDAMENTALS_TTL_TRACKED_DAYS:-30}
       FUNDAMENTALS_TTL_ADHOC_DAYS: ${FUNDAMENTALS_TTL_ADHOC_DAYS:-7}
@@ -67,6 +71,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Reach the host (for the optional Claude Code bridge) on Linux too; Docker
+    # Desktop (macOS/Windows) provides host.docker.internal automatically.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Host port in the 9000-9999 range (override with BACKEND_PORT). Container
     # listens on 9000 (see backend/Dockerfile).
     ports:
