@@ -45,7 +45,6 @@ export default function Home(): React.JSX.Element {
           { href: "/fundamentals", label: "Fundamentals" },
           { href: "/signals", label: "SPY Signals" },
           { href: "/strategies", label: "Strategy Lab" },
-          { href: "/login", label: "Sign in" },
         ].map((l) => (
           <a
             key={l.href}

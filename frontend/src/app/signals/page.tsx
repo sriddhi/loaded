@@ -110,7 +110,7 @@ export default function SignalsPage(): React.JSX.Element {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), 30_000); // auto-refresh
+    const id = setInterval(() => void load(), 60_000); // auto-refresh every 1 min (matches the job cadence)
     return () => clearInterval(id);
   }, [load]);
 
