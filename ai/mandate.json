@@ -1,0 +1,68 @@
+{
+  "_comment": "Source-agnostic enforcement config for CLAUDE.md Rule #1. Every code path below requires a matching generator AND evaluator prompt. Enforced by scripts/check_generator_mandate.py in CI (hard block) and the pre-commit hook. Applies to ALL code regardless of which tool or human wrote it.",
+  "modules": [
+    {
+      "name": "agents",
+      "code_globs": ["backend/app/agents/**"],
+      "generator_globs": ["ai/generator/agents/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/agents/*_evaluator.md"]
+    },
+    {
+      "name": "auth",
+      "code_globs": ["backend/app/auth/**"],
+      "generator_globs": ["ai/generator/auth/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/auth/*_evaluator.md"]
+    },
+    {
+      "name": "strategies",
+      "code_globs": ["backend/app/strategies/**"],
+      "generator_globs": ["ai/generator/strategies/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/strategies/*_evaluator.md"]
+    },
+    {
+      "name": "trading",
+      "code_globs": ["backend/app/trading/**"],
+      "generator_globs": ["ai/generator/trading/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/trading/*_evaluator.md"]
+    },
+    {
+      "name": "alpaca",
+      "code_globs": ["backend/app/alpaca/**", "backend/app/alpaca_client.py"],
+      "generator_globs": ["ai/generator/alpaca/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/alpaca/*_evaluator.md"]
+    },
+    {
+      "name": "marketdata",
+      "code_globs": ["backend/app/marketdata/**"],
+      "generator_globs": ["ai/generator/alpaca/marketdata_generator.md"],
+      "evaluator_globs": ["ai/evaluator/alpaca/marketdata_evaluator.md"]
+    },
+    {
+      "name": "tooling",
+      "code_globs": ["scripts/**"],
+      "generator_globs": ["ai/generator/tooling/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/tooling/*_evaluator.md"]
+    }
+  ],
+  "exempt_globs": [
+    "backend/app/main.py",
+    "backend/app/__init__.py",
+    "backend/app/**/__init__.py",
+    "backend/tests/**",
+    "frontend/**",
+    "ai/**",
+    "**/*.md",
+    "**/*.json",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/*.toml",
+    "**/*.txt",
+    "**/*.cfg",
+    "**/*.ini",
+    "docker-compose.yml",
+    "Dockerfile",
+    "**/Dockerfile",
+    ".env.example",
+    ".gitignore"
+  ]
+}
