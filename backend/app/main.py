@@ -44,6 +44,18 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- OAuth support: password_hash becomes optional; add provider identity columns.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_google_sub
+    ON users (google_sub) WHERE google_sub IS NOT NULL;
+DO $$ BEGIN
+  ALTER TABLE users ADD CONSTRAINT chk_users_credential
+    CHECK (password_hash IS NOT NULL OR google_sub IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS strategies (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,

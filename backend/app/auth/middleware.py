@@ -17,7 +17,8 @@ def _extract_bearer(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
-    return None
+    # Fall back to the access_token cookie (browser login sets httpOnly cookies).
+    return request.cookies.get("access_token")
 
 
 class DocsAuthMiddleware(BaseHTTPMiddleware):

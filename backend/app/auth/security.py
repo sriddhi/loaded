@@ -8,13 +8,27 @@ import os
 from datetime import UTC
 from typing import Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# auto_error=False so requests without a Bearer header fall through to the
+# cookie resolver instead of being rejected immediately.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+ACCESS_COOKIE = "access_token"
+REFRESH_COOKIE = "refresh_token"
+REFRESH_COOKIE_PATH = "/auth/refresh"
+
+
+def _cookie_secure() -> bool:
+    return os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+
+
+def _cookie_samesite() -> str:
+    return os.getenv("COOKIE_SAMESITE", "lax").lower()
 
 
 def _secret() -> str:
@@ -90,16 +104,66 @@ def decode_token(token: str) -> dict[str, Any]:
         ) from exc
 
 
+# ── Cookies ──────────────────────────────────────────────────────────────────
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Attach the access + refresh JWTs as httpOnly cookies."""
+    secure = _cookie_secure()
+    samesite = _cookie_samesite()
+    response.set_cookie(
+        ACCESS_COOKIE,
+        access_token,
+        max_age=_access_expire_minutes() * 60,
+        httponly=True,
+        secure=secure,
+        samesite=samesite,  # type: ignore[arg-type]
+        path="/",
+    )
+    response.set_cookie(
+        REFRESH_COOKIE,
+        refresh_token,
+        max_age=_refresh_expire_days() * 86400,
+        httponly=True,
+        secure=secure,
+        samesite=samesite,  # type: ignore[arg-type]
+        path=REFRESH_COOKIE_PATH,
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    """Delete the auth cookies (paths must match those used when setting)."""
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH)
+
+
 # ── Dependencies ───────────────────────────────────────────────────────────────
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any]:
+def _resolve_token(request: Request) -> str | None:
+    """Access token from the Authorization: Bearer header, else the cookie."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get(ACCESS_COOKIE)
+
+
+async def get_current_user(request: Request) -> dict[str, Any]:
     """
-    Decode the bearer token and return the user row from the DB.
-    Raises 401 if token is invalid, expired, or user is inactive.
+    Resolve the access token from the Bearer header or the access_token cookie,
+    decode it, and return the user row from the DB.
+    Raises 401 if the token is missing, invalid, expired, or the user is inactive.
     """
     from app.auth.db import get_user_by_id
     from app.main import get_db  # imported here to avoid circular at module load
+
+    token = _resolve_token(request)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     payload = decode_token(token)
     if payload.get("type") != "access":
