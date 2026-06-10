@@ -2,7 +2,7 @@
 # ── Dhando E2E Live Test Suite ────────────────────────────────────────────────
 set -euo pipefail
 
-API="http://localhost:8000"
+API="http://localhost:9000"
 PASS=0; FAIL=0; WARN=0
 FAILURES=()
 

@@ -51,8 +51,8 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/google/callback}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:4000/api/auth/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
     depends_on:
@@ -60,8 +60,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Host port in the 9000-9999 range (override with BACKEND_PORT). Container
+    # listens on 9000 (see backend/Dockerfile).
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-9000}:9000"
     networks:
       - loaded_net
 
@@ -69,11 +71,13 @@ services:
     build: ./frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:${BACKEND_PORT:-9000}
     depends_on:
       - backend
+    # Host port in the 4000-4999 range (override with FRONTEND_PORT). Container
+    # listens on 4000 (see frontend/Dockerfile).
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-4000}:4000"
     networks:
       - loaded_net
 

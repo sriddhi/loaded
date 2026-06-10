@@ -86,8 +86,8 @@ After running, fill in your API keys in `.env` (get them from the team lead), th
 
 ```bash
 docker compose up -d
-# → Frontend: http://localhost:3000
-# → Backend API: http://localhost:8000
+# → Frontend: http://localhost:4000
+# → Backend API: http://localhost:9000
 ```
 
 ### Developer Tools Included
@@ -147,9 +147,17 @@ docker compose build backend && docker compose up -d backend
 ```
 
 Services:
-- `http://localhost:3000` — Next.js frontend
-- `http://localhost:8000` — FastAPI backend
+- `http://localhost:4000` — Next.js frontend
+- `http://localhost:9000` — FastAPI backend
 - PostgreSQL runs internally only (no exposed port)
+
+**Port convention:** loaded uses host ports in the **9000–9999** range for the
+API/backend and **4000–4999** for the frontend — never the common 3000/8000
+defaults (avoids collisions with other local projects). Host ports are
+overridable via `BACKEND_PORT` (default 9000) and `FRONTEND_PORT` (default 4000).
+Postgres (5432) and Redis (6379) keep their standard ports but are internal-only
+(never published to the host). New host-facing services should claim ports from
+these ranges unless a specific port is required.
 
 ---
 
@@ -197,7 +205,7 @@ cp .env.example .env
 
 Key variables:
 - `POSTGRES_PASSWORD` — shared by compose and backend `DATABASE_URL`
-- `NEXT_PUBLIC_API_URL` — set to `http://localhost:8000` for local dev
+- `NEXT_PUBLIC_API_URL` — set to `http://localhost:9000` for local dev
 - `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — Alpaca paper trading keys
 - `ALPACA_PAPER_TRADE` — defaults to `true`; set `false` for live trading
 - `ANTHROPIC_API_KEY` — required for strategy generator and robot

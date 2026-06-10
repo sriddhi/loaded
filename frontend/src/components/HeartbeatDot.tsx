@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 
 type Status = "online" | "offline" | "checking";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000";
 const INTERVAL_MS = 30_000;
 
 export default function HeartbeatDot() {
