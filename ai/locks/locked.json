@@ -119,6 +119,18 @@
       "sha256": "8231888c70636af2be11e00a0f31eed333ee6de61fd246c28d62ffda3bda9e2b",
       "locked_at": "2026-06-10T01:40:08Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/fundamentals/fundamentals_refresh_generator.md",
+      "sha256": "dc838354d0beb2f3a74d8d12ff6cf1c44c43ac9234a24e9906c4dcf7a7357293",
+      "locked_at": "2026-06-10T03:10:11Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/fundamentals/fundamentals_refresh_evaluator.md",
+      "sha256": "cba7304ce9d378c76d4933649eef920c884a31d76bfc81887fc2a3a8476ce438",
+      "locked_at": "2026-06-10T03:10:11Z",
+      "version": "1.0"
     }
   ]
 }

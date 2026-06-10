@@ -17,7 +17,9 @@ from app.auth.security import get_current_user
 from app.fundamentals.client import finnhub_ok
 from app.fundamentals.finnhub_ws import FinnhubWsClient, finnhub_api_key, finnhub_ws_enabled
 from app.fundamentals.price_cache import InMemoryPriceCache
+from app.fundamentals.refresh import pending_watch_count
 from app.fundamentals.router import router as fundamentals_router
+from app.fundamentals.scheduler import FundamentalsScheduler
 from app.marketdata.router import router as marketdata_router
 from app.strategies.router import router as strategies_router
 from app.trading.router import router as trading_router
@@ -408,6 +410,37 @@ CREATE TABLE IF NOT EXISTS financial_statements (
 );
 CREATE INDEX IF NOT EXISTS idx_financial_statements_equity_period
     ON financial_statements(equity_id, period_end DESC);
+
+-- ── Fundamentals refresh layer: earnings calendar + watch queue ───────────────
+CREATE TABLE IF NOT EXISTS earnings_calendar (
+    id                   SERIAL PRIMARY KEY,
+    symbol               TEXT NOT NULL,
+    earnings_date        DATE NOT NULL,
+    hour                 TEXT,                       -- 'bmo' | 'amc' | 'dmh'
+    fiscal_quarter       INTEGER,
+    fiscal_year          INTEGER,
+    expected_period_end  DATE,
+    source               TEXT NOT NULL DEFAULT 'finnhub',
+    fetched_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(symbol, earnings_date)
+);
+CREATE INDEX IF NOT EXISTS idx_earnings_calendar_date
+    ON earnings_calendar(earnings_date);
+
+CREATE TABLE IF NOT EXISTS earnings_watch (
+    id                   SERIAL PRIMARY KEY,
+    symbol               TEXT NOT NULL,
+    earnings_date        DATE NOT NULL,
+    expected_period_end  DATE,
+    status               TEXT NOT NULL DEFAULT 'pending',  -- pending|done|aged_out
+    attempts             INTEGER NOT NULL DEFAULT 0,
+    last_polled_at       TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at          TIMESTAMPTZ,
+    UNIQUE(symbol, earnings_date)
+);
+CREATE INDEX IF NOT EXISTS idx_earnings_watch_status
+    ON earnings_watch(status);
 """
 
 HYPERTABLES_MIGRATIONS = """
@@ -563,6 +596,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         print("[startup] FINNHUB_API_KEY not set — live-price websocket disabled.")
 
+    # ── Fundamentals refresh scheduler (earnings-aware ingest) ────────────────
+    scheduler = FundamentalsScheduler(pool)
+    app.state.fundamentals_scheduler = scheduler
+    app.state.fundamentals_task = asyncio.create_task(scheduler.run())
+    print("[startup] Fundamentals refresh scheduler started.")
+
     yield
 
     if app.state.finnhub_client is not None:
@@ -571,6 +610,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.finnhub_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.finnhub_task
+    await app.state.fundamentals_scheduler.stop()
+    app.state.fundamentals_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await app.state.fundamentals_task
     await pool.close()
 
 
@@ -636,6 +679,10 @@ async def health() -> dict[str, Any]:
     db = await db_ok()
     alpaca_connected, alpaca_error = alpaca_ok()
     finnhub_connected, finnhub_error = finnhub_ok(getattr(app.state, "finnhub_client", None))
+    try:
+        watch_pending = await pending_watch_count(app.state.pool) if db else None
+    except Exception:
+        watch_pending = None
     return {
         "status": "online",
         "db": "connected" if db else "disconnected",
@@ -643,5 +690,6 @@ async def health() -> dict[str, Any]:
         "alpaca_error": alpaca_error,
         "finnhub": "connected" if finnhub_connected else "disconnected",
         "finnhub_error": finnhub_error,
+        "earnings_watch_pending": watch_pending,
         "timestamp": datetime.now(UTC).isoformat(),
     }
