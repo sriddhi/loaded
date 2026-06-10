@@ -50,6 +50,17 @@ for e in data.get('locked_files', []):
   fi
 fi
 
+# ── 1b. Rule #1 mandate: generator+evaluator coverage + lock-hash integrity ───
+# Source-agnostic — applies to code from Claude, Cursor, Copilot, or a human.
+if [[ -f "$ROOT/scripts/check_generator_mandate.py" ]]; then
+  header "Rule #1 mandate (generator + evaluator coverage)"
+  if python3 "$ROOT/scripts/check_generator_mandate.py" --staged; then
+    pass "Rule #1 mandate"
+  else
+    fail "Rule #1 mandate" "add the missing generator/evaluator, or unlock the modified prompt"
+  fi
+fi
+
 # ── 2. New app file without test check (always runs when .py staged) ──────────
 NEW_APP_PY=$(git diff --cached --name-only --diff-filter=A | grep '^backend/app/.*\.py$' | grep -v '__init__\.py' || true)
 if [[ -n "$NEW_APP_PY" ]]; then
