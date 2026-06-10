@@ -133,3 +133,65 @@ def test_price_ok_with_tick():
     body = resp.json()
     assert body["price"] == 123.45
     assert body["stale"] is True  # old timestamp
+
+
+# ── Tracklist ─────────────────────────────────────────────────────────────────
+
+
+def _client_conn(conn: MagicMock) -> TestClient:
+    from app.main import app
+
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=conn)
+    app.state.pool = pool
+    app.state.price_cache = None
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_list_tracked():
+    conn = MagicMock()
+    conn.fetch = AsyncMock(
+        return_value=[
+            {"symbol": "NVDA", "name": "NVIDIA", "gics_sector": "Tech", "market_cap_tier": "mega"}
+        ]
+    )
+    resp = _client_conn(conn).get("/fundamentals/tracked")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["symbol"] == "NVDA"
+    assert body[0]["sector"] == "Tech"
+
+
+def test_add_tracked_ok():
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(
+        return_value={
+            "symbol": "AAPL",
+            "name": "Apple",
+            "gics_sector": "Tech",
+            "market_cap_tier": "mega",
+        }
+    )
+    with patch("app.fundamentals.router.ingest_statements", AsyncMock()):
+        resp = _client_conn(conn).post("/fundamentals/tracked/AAPL")
+    assert resp.status_code == 201
+    assert resp.json()["symbol"] == "AAPL"
+
+
+def test_add_tracked_unknown_symbol_404():
+    conn = MagicMock()
+    with patch(
+        "app.fundamentals.router.ingest_statements",
+        AsyncMock(side_effect=ValueError("No data found for symbol: ZZZZ")),
+    ):
+        resp = _client_conn(conn).post("/fundamentals/tracked/ZZZZ")
+    assert resp.status_code == 404
+
+
+def test_remove_tracked_204():
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    resp = _client_conn(conn).request("DELETE", "/fundamentals/tracked/NVDA")
+    assert resp.status_code == 204

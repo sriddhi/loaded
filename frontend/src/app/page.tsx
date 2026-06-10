@@ -39,6 +39,29 @@ export default function Home(): React.JSX.Element {
         Trading intelligence
       </p>
 
+      {/* Nav */}
+      <nav style={{ display: "flex", gap: 20, marginTop: 24 }}>
+        {[
+          { href: "/fundamentals", label: "Fundamentals" },
+          { href: "/strategies", label: "Strategy Lab" },
+          { href: "/login", label: "Sign in" },
+        ].map((l) => (
+          <a
+            key={l.href}
+            href={l.href}
+            style={{
+              color: "var(--accent, #e8ff47)",
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            {l.label}
+          </a>
+        ))}
+      </nav>
+
       {/* Heartbeat status dot — bottom center */}
       <HeartbeatDot />
     </main>

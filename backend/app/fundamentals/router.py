@@ -16,6 +16,7 @@ from app.fundamentals.models import (
     PriceResponse,
     RefreshResult,
     StatementsResponse,
+    TrackedEquity,
 )
 from app.fundamentals.price_cache import PriceStore
 from app.fundamentals.refresh import ensure_fresh
@@ -113,6 +114,59 @@ async def _refresh_then_track(request: Request, symbol: str) -> None:
         await ensure_fresh(pool, symbol, tracked=tracked)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+# ── Tracklist ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/tracked", response_model=list[TrackedEquity])
+async def list_tracked(request: Request) -> list[TrackedEquity]:
+    async with _pool(request).acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT symbol, name, gics_sector, market_cap_tier "
+            "FROM equities WHERE is_tracked = TRUE ORDER BY symbol"
+        )
+    return [
+        TrackedEquity(
+            symbol=r["symbol"],
+            name=r["name"],
+            sector=r["gics_sector"],
+            market_cap_tier=r["market_cap_tier"],
+        )
+        for r in rows
+    ]
+
+
+@router.post("/tracked/{symbol}", response_model=TrackedEquity, status_code=201)
+async def add_tracked(symbol: str, request: Request) -> TrackedEquity:
+    """Add a ticker to the fundamentals tracklist: ingest its statements + flag tracked."""
+    symbol = symbol.upper()
+    try:
+        async with _pool(request).acquire() as conn:
+            await ingest_statements(symbol, conn)  # creates/updates the equity row
+            row = await conn.fetchrow(
+                "UPDATE equities SET is_tracked = TRUE WHERE symbol = $1 "
+                "RETURNING symbol, name, gics_sector, market_cap_tier",
+                symbol,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equity not found")
+    return TrackedEquity(
+        symbol=row["symbol"],
+        name=row["name"],
+        sector=row["gics_sector"],
+        market_cap_tier=row["market_cap_tier"],
+    )
+
+
+@router.delete("/tracked/{symbol}", status_code=204)
+async def remove_tracked(symbol: str, request: Request) -> None:
+    async with _pool(request).acquire() as conn:
+        await conn.execute(
+            "UPDATE equities SET is_tracked = FALSE WHERE symbol = $1", symbol.upper()
+        )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
