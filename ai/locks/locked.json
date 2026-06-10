@@ -59,6 +59,42 @@
       "sha256": "3f496db4dd5b4f0f022bfc5e7821c077c5d629b47e32f15ff63c9eb92a93dee1",
       "locked_at": "2026-06-06T01:44:46Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/agents/fundamentals_generator.md",
+      "sha256": "a5256c1ed998950745b502057c5033acdc26e0a914f71a8a59bf370ba8b1923d",
+      "locked_at": "2026-06-08T04:02:33Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/agents/fundamentals_evaluator.md",
+      "sha256": "02dac9bdb5ad8b41bb1f6443474305c1ea7fcb7d2b3973c513e578eaee22c98a",
+      "locked_at": "2026-06-08T04:02:33Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/trading/spy_0dte_generator.md",
+      "sha256": "6af271a78ce67fbeb22162318ef18f90d26b38d0aa3a3042a159c70f509e3f0f",
+      "locked_at": "2026-06-08T14:06:55Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/trading/spy_0dte_evaluator.md",
+      "sha256": "3af8fdb4bec0d35e8107912e299081d022d6653c3e83b5ab894ce59002ead256",
+      "locked_at": "2026-06-08T14:06:55Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/tooling/mandate_enforcement_generator.md",
+      "sha256": "af1af257e91a4bb024faffd0c8732ff81f74a96d8f37331fa7f85009cda2cb2b",
+      "locked_at": "2026-06-08T19:17:03Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/tooling/mandate_enforcement_evaluator.md",
+      "sha256": "68fa8894d6fca18f3e2da4265cbda6d98d551b3fe69defa0e076daf313619113",
+      "locked_at": "2026-06-08T19:17:05Z",
+      "version": "1.0"
     }
   ]
 }
