@@ -131,6 +131,30 @@
       "sha256": "cba7304ce9d378c76d4933649eef920c884a31d76bfc81887fc2a3a8476ce438",
       "locked_at": "2026-06-10T03:10:11Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/signals/spy_signals_generator.md",
+      "sha256": "fc4b708ef06ee52bd98383395fba32e0377395722dd0a92fdd2adce822f87ba1",
+      "locked_at": "2026-06-10T15:38:12Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/signals/spy_signals_evaluator.md",
+      "sha256": "0c1784374157a8284053e1bbd8e8ed6c34da1991a0ae600e50bea2970ecb033f",
+      "locked_at": "2026-06-10T15:38:14Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/ops/ops_metrics_generator.md",
+      "sha256": "8ed812619735cffd13378fb46e5c4ce24f727e907f692821170448cbf31ef9c0",
+      "locked_at": "2026-06-10T20:39:39Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/ops/ops_metrics_evaluator.md",
+      "sha256": "30969db252855aeab4a79d83d08c6f95f1fac511268849fdf41ba83dd3f2a2cd",
+      "locked_at": "2026-06-10T20:39:39Z",
+      "version": "1.0"
     }
   ]
 }

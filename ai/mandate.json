@@ -48,6 +48,18 @@
       "code_globs": ["backend/app/fundamentals/**"],
       "generator_globs": ["ai/generator/fundamentals/*_generator.md"],
       "evaluator_globs": ["ai/evaluator/fundamentals/*_evaluator.md"]
+    },
+    {
+      "name": "signals",
+      "code_globs": ["backend/app/signals/**"],
+      "generator_globs": ["ai/generator/signals/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/signals/*_evaluator.md"]
+    },
+    {
+      "name": "ops",
+      "code_globs": ["backend/app/ops/**"],
+      "generator_globs": ["ai/generator/ops/*_generator.md"],
+      "evaluator_globs": ["ai/evaluator/ops/*_evaluator.md"]
     }
   ],
   "exempt_globs": [
