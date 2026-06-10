@@ -6,8 +6,16 @@ import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
 
 type HorizonSignal = { horizon_min: number; label: string; confidence: number; reason: string };
-type SpySignal = { ts: string; price: number; signals: HorizonSignal[] };
+type SpySignal = {
+  ts: string;
+  symbol: string;
+  price: number;
+  volume: number;
+  signals: HorizonSignal[];
+};
 type History = { signals: SpySignal[] };
+
+const SYMBOLS = ["SPY", "MU", "AVGO"];
 
 const LABEL_COLOR: Record<string, string> = {
   bullish: "#22c55e",
@@ -37,6 +45,12 @@ function hzShort(h: number): string {
 
 function color(label: string): string {
   return LABEL_COLOR[label] ?? "#777";
+}
+
+function fmtVolume(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return `${v}`;
 }
 
 function Badge({ s }: { s: HorizonSignal }): React.JSX.Element {
@@ -69,50 +83,34 @@ function Badge({ s }: { s: HorizonSignal }): React.JSX.Element {
 export default function SignalsPage(): React.JSX.Element {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const [symbol, setSymbol] = useState<string>("SPY");
   const [latest, setLatest] = useState<SpySignal | null>(null);
   const [history, setHistory] = useState<SpySignal[]>([]);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
-  const load = useCallback(async (): Promise<void> => {
+  const load = useCallback(async (sym: string): Promise<void> => {
     try {
       const [lRes, hRes] = await Promise.all([
-        apiFetch("/signals/spy/latest"),
-        apiFetch("/signals/spy/history?limit=30"),
+        apiFetch(`/signals/${sym}/latest`),
+        apiFetch(`/signals/${sym}/history?limit=30`),
       ]);
       setLatest(lRes.ok ? ((await lRes.json()) as SpySignal) : null);
       setHistory(hRes.ok ? ((await hRes.json()) as History).signals : []);
+      setError(null);
     } catch {
       setError("Failed to load signals.");
     }
   }, []);
 
-  const runNow = useCallback(async (): Promise<void> => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await apiFetch("/signals/spy/run", { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(body.detail ?? "Run failed");
-      }
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Run failed.");
-    } finally {
-      setBusy(false);
-    }
-  }, [load]);
-
   useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), 60_000); // auto-refresh every 1 min (matches the job cadence)
+    void load(symbol);
+    const id = setInterval(() => void load(symbol), 60_000); // auto-refresh every 1 min (matches the job)
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, symbol]);
 
   if (authLoading || !user) return <main style={{ background: "#0a0a0a", minHeight: "100vh" }} />;
 
@@ -128,35 +126,48 @@ export default function SignalsPage(): React.JSX.Element {
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 6 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>SPY Signals</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>Signals</h1>
         {latest && (
           <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 18 }}>
             ${latest.price.toFixed(2)}
           </span>
         )}
-        <button
-          onClick={() => void runNow()}
-          disabled={busy}
-          style={{
-            marginLeft: "auto",
-            background: "#e8ff47",
-            color: "#0a0a0a",
-            border: "none",
-            borderRadius: 6,
-            padding: "8px 16px",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: busy ? "default" : "pointer",
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
-          {busy ? "Running…" : "Run now"}
-        </button>
+        {latest && latest.volume > 0 && (
+          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 13, color: "#777" }}>
+            vol {fmtVolume(latest.volume)}
+          </span>
+        )}
+      </div>
+
+      {/* Symbol tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {SYMBOLS.map((sym) => {
+          const active = sym === symbol;
+          return (
+            <button
+              key={sym}
+              onClick={() => setSymbol(sym)}
+              style={{
+                background: active ? "#e8ff47" : "#161616",
+                color: active ? "#0a0a0a" : "#bbb",
+                border: `1px solid ${active ? "#e8ff47" : "#2a2a2a"}`,
+                borderRadius: 6,
+                padding: "6px 16px",
+                fontWeight: 700,
+                fontSize: 13,
+                letterSpacing: "0.04em",
+                cursor: "pointer",
+              }}
+            >
+              {sym}
+            </button>
+          );
+        })}
       </div>
 
       <p style={{ color: "#555", fontSize: 12, marginBottom: 20 }}>
-        Heuristic indicator over recent price action — refreshes every minute. Not a prediction, not
-        financial advice.
+        Heuristic indicator over recent price action <strong>and volume</strong> — auto-refreshes
+        every minute. Not a prediction, not financial advice.
       </p>
 
       {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>}
@@ -181,7 +192,7 @@ export default function SignalsPage(): React.JSX.Element {
         </>
       ) : (
         <div style={{ color: "#777", fontSize: 14, marginBottom: 28 }}>
-          No signal yet — markets may be closed, or the job hasn’t run. Press “Run now”.
+          No {symbol} signal yet — markets may be closed, or the job hasn’t run a full cycle.
         </div>
       )}
 
@@ -207,6 +218,7 @@ export default function SignalsPage(): React.JSX.Element {
             <tr style={{ color: "#777" }}>
               <th style={{ textAlign: "left", padding: "10px 14px" }}>Time</th>
               <th style={{ textAlign: "right", padding: "10px 14px" }}>Price</th>
+              <th style={{ textAlign: "right", padding: "10px 14px" }}>Vol</th>
               {HZ.map((h) => (
                 <th key={h} style={{ textAlign: "center", padding: "10px 14px" }}>
                   {hzShort(h)}
@@ -221,6 +233,9 @@ export default function SignalsPage(): React.JSX.Element {
                   {new Date(row.ts).toLocaleTimeString()}
                 </td>
                 <td style={{ padding: "8px 14px", textAlign: "right" }}>${row.price.toFixed(2)}</td>
+                <td style={{ padding: "8px 14px", textAlign: "right", color: "#888" }}>
+                  {fmtVolume(row.volume)}
+                </td>
                 {row.signals.map((s) => (
                   <td
                     key={s.horizon_min}
@@ -239,7 +254,7 @@ export default function SignalsPage(): React.JSX.Element {
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ padding: 14, color: "#555" }}>
+                <td colSpan={7} style={{ padding: 14, color: "#555" }}>
                   No history yet.
                 </td>
               </tr>

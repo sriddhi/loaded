@@ -16,7 +16,9 @@ class HorizonSignal(BaseModel):
 
 class SpySignal(BaseModel):
     ts: datetime
+    symbol: str = "SPY"
     price: float
+    volume: int = 0
     signals: list[HorizonSignal]
 
 
