@@ -12,6 +12,7 @@ import os
 from typing import Any
 
 import asyncpg
+from app.ops.metrics import track_job
 from app.signals.engine import HORIZONS, compute_all
 
 logger = logging.getLogger(__name__)
@@ -166,7 +167,8 @@ def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
         outcome = row[ok] if _has_col(row, ok) and row[ok] else "pending"
         return {
             "horizon_min": h,
-            "label": row[sk],
+            # Old rows predating a horizon's migration have a NULL label → neutral.
+            "label": row[sk] or "neutral",
             "confidence": float(row[ck] or 0),
             "reason": row[rk] or "",
             "outcome": outcome,
@@ -217,7 +219,8 @@ class SpySignalJob:
         logger.info("[signals] signal job started (every %ds) for %s", interval, ", ".join(SYMBOLS))
         while not self._stopping:
             try:
-                results = await tick_all(self._pool)
+                with track_job("spy_signal_job", "backend"):
+                    results = await tick_all(self._pool)
                 for result in results:
                     five = result["signals"][0]
                     logger.info(

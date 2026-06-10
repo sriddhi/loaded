@@ -57,6 +57,40 @@ async def test_tick_once_stores_and_returns_signal():
     conn.fetchval.assert_awaited_once()  # inserted a row
 
 
+def test_row_to_signal_coerces_null_label_to_neutral():
+    # Rows predating the 1m migration have sig_1m = None; must not crash.
+    row = {
+        "ts": datetime.now(UTC),
+        "symbol": "SPY",
+        "price": 100.0,
+        "volume": 0,
+        "sig_1m": None,
+        "conf_1m": None,
+        "reason_1m": None,
+        "res_1m": None,
+        "sig_5m": "bullish",
+        "conf_5m": 0.5,
+        "reason_5m": "up",
+        "res_5m": "correct",
+        "sig_10m": "neutral",
+        "conf_10m": 0.0,
+        "reason_10m": "flat",
+        "res_10m": None,
+        "sig_20m": "bearish",
+        "conf_20m": 0.3,
+        "reason_20m": "down",
+        "res_20m": None,
+        "sig_1d": "neutral",
+        "conf_1d": 0.0,
+        "reason_1d": "flat",
+        "res_1d": None,
+    }
+    out = job._row_to_signal(row)
+    one_min = next(s for s in out["signals"] if s["horizon_min"] == 1)
+    assert one_min["label"] == "neutral"
+    assert one_min["outcome"] == "pending"
+
+
 @pytest.mark.asyncio
 async def test_tick_all_runs_every_symbol():
     calls: list[str] = []

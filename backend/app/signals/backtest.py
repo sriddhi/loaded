@@ -21,6 +21,7 @@ from datetime import timedelta
 from typing import Any
 
 import asyncpg
+from app.ops.metrics import track_job
 from app.signals.engine import HORIZONS, _threshold
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,8 @@ class BacktestJob:
         logger.info("[backtest] signal backtester started (every %ds)", self._interval)
         while not self._stopping:
             try:
-                n = await evaluate_due(self._pool)
+                with track_job("signal_backtester", "backend"):
+                    n = await evaluate_due(self._pool)
                 if n:
                     logger.info("[backtest] resolved %d signal(s)", n)
             except asyncio.CancelledError:

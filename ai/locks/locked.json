@@ -143,6 +143,18 @@
       "sha256": "0c1784374157a8284053e1bbd8e8ed6c34da1991a0ae600e50bea2970ecb033f",
       "locked_at": "2026-06-10T15:38:14Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/ops/ops_metrics_generator.md",
+      "sha256": "8ed812619735cffd13378fb46e5c4ce24f727e907f692821170448cbf31ef9c0",
+      "locked_at": "2026-06-10T20:39:39Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/ops/ops_metrics_evaluator.md",
+      "sha256": "30969db252855aeab4a79d83d08c6f95f1fac511268849fdf41ba83dd3f2a2cd",
+      "locked_at": "2026-06-10T20:39:39Z",
+      "version": "1.0"
     }
   ]
 }

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import os
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -21,12 +22,15 @@ from app.fundamentals.refresh import pending_watch_count
 from app.fundamentals.router import router as fundamentals_router
 from app.fundamentals.scheduler import FundamentalsScheduler
 from app.marketdata.router import router as marketdata_router
+from app.ops.metrics import METRICS
+from app.ops.router import router as ops_router
 from app.signals.backtest import BacktestJob
 from app.signals.job import SpySignalJob, signals_enabled
+from app.signals.retention import RetentionJob
 from app.signals.router import router as signals_router
 from app.strategies.router import router as strategies_router
 from app.trading.router import router as trading_router
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -661,6 +665,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.backtest_task = asyncio.create_task(backtest_job.run())
         print("[startup] Signal backtester started.")
 
+    # ── Signal retention (daily after-close purge of rows older than a week) ───
+    app.state.retention_job = None
+    app.state.retention_task = None
+    if signals_enabled():
+        retention_job = RetentionJob(pool)
+        app.state.retention_job = retention_job
+        app.state.retention_task = asyncio.create_task(retention_job.run())
+        print("[startup] Signal retention job started.")
+
+    # ── Register jobs in the ops metrics registry (for the Tools tab) ──────────
+    if app.state.finnhub_client is not None:
+        METRICS.register_job("finnhub_ws", "backend", "running")
+    METRICS.register_job("fundamentals_scheduler", "backend", "running")
+    if app.state.signal_job is not None:
+        METRICS.register_job("spy_signal_job", "backend", "running")
+    if app.state.backtest_job is not None:
+        METRICS.register_job("signal_backtester", "backend", "running")
+    if app.state.retention_job is not None:
+        METRICS.register_job("signal_retention", "backend", "idle")
+
     yield
 
     if app.state.finnhub_client is not None:
@@ -685,6 +709,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.backtest_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.backtest_task
+    if app.state.retention_job is not None:
+        await app.state.retention_job.stop()
+    if app.state.retention_task is not None:
+        app.state.retention_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.retention_task
     await pool.close()
 
 
@@ -723,6 +753,23 @@ app.include_router(agents_router, prefix="/agents", dependencies=_auth_dep)
 app.include_router(trading_router, prefix="/trading", dependencies=_auth_dep)
 app.include_router(fundamentals_router, dependencies=_auth_dep)
 app.include_router(signals_router, dependencies=_auth_dep)
+app.include_router(ops_router, dependencies=_auth_dep)
+
+
+@app.middleware("http")
+async def _api_metrics_middleware(request: Request, call_next: Any) -> Any:
+    """Record per-endpoint latency + status for the Tools tab (all UI/API traffic)."""
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        route = request.scope.get("route")
+        endpoint = getattr(route, "path", None) or request.url.path
+        METRICS.record_api(request.method, endpoint, status_code, duration_ms)
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
