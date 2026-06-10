@@ -12,6 +12,8 @@ class HorizonSignal(BaseModel):
     label: str
     confidence: float
     reason: str = ""
+    # Backtest verdict once the horizon has elapsed: "pending" | "correct" | "wrong".
+    outcome: str = "pending"
 
 
 class SpySignal(BaseModel):

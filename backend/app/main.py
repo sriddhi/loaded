@@ -21,6 +21,7 @@ from app.fundamentals.refresh import pending_watch_count
 from app.fundamentals.router import router as fundamentals_router
 from app.fundamentals.scheduler import FundamentalsScheduler
 from app.marketdata.router import router as marketdata_router
+from app.signals.backtest import BacktestJob
 from app.signals.job import SpySignalJob, signals_enabled
 from app.signals.router import router as signals_router
 from app.strategies.router import router as strategies_router
@@ -468,6 +469,12 @@ ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_1d TEXT;
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS symbol TEXT NOT NULL DEFAULT 'SPY';
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS volume BIGINT;
 CREATE INDEX IF NOT EXISTS idx_spy_signals_symbol_ts ON spy_signals(symbol, ts DESC);
+-- Backtest verdicts per horizon (NULL = not yet evaluated). Filled by BacktestJob
+-- once the horizon has elapsed: 'correct' | 'wrong'.
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_5m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_10m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_20m TEXT;
+ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_1d TEXT;
 """
 
 HYPERTABLES_MIGRATIONS = """
@@ -640,6 +647,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         print("[startup] FINNHUB_API_KEY not set — SPY signal job disabled.")
 
+    # ── Signal backtester (validates each signal after its horizon elapses) ────
+    app.state.backtest_job = None
+    app.state.backtest_task = None
+    if signals_enabled():
+        backtest_job = BacktestJob(pool)
+        app.state.backtest_job = backtest_job
+        app.state.backtest_task = asyncio.create_task(backtest_job.run())
+        print("[startup] Signal backtester started.")
+
     yield
 
     if app.state.finnhub_client is not None:
@@ -658,6 +674,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.signal_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.signal_task
+    if app.state.backtest_job is not None:
+        await app.state.backtest_job.stop()
+    if app.state.backtest_task is not None:
+        app.state.backtest_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.backtest_task
     await pool.close()
 
 

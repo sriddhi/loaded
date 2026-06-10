@@ -79,6 +79,7 @@ def _results_to_signals(results: dict[int, tuple[str, float, str]]) -> list[dict
             "label": results[h][0],
             "confidence": results[h][1],
             "reason": results[h][2],
+            "outcome": "pending",
         }
         for h in HORIZONS
     ]
@@ -147,13 +148,23 @@ async def tick_all(pool: asyncpg.Pool) -> list[dict[str, Any]]:
 # ── Query helpers (used by the router) ────────────────────────────────────────
 
 
+def _has_col(row: asyncpg.Record, key: str) -> bool:
+    try:
+        row[key]
+        return True
+    except (KeyError, IndexError):
+        return False
+
+
 def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
-    def sig(h: int, sk: str, ck: str, rk: str) -> dict[str, Any]:
+    def sig(h: int, sk: str, ck: str, rk: str, ok: str) -> dict[str, Any]:
+        outcome = row[ok] if _has_col(row, ok) and row[ok] else "pending"
         return {
             "horizon_min": h,
             "label": row[sk],
             "confidence": float(row[ck] or 0),
             "reason": row[rk] or "",
+            "outcome": outcome,
         }
 
     return {
@@ -162,10 +173,10 @@ def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
         "price": float(row["price"]),
         "volume": int(row["volume"] or 0),
         "signals": [
-            sig(5, "sig_5m", "conf_5m", "reason_5m"),
-            sig(10, "sig_10m", "conf_10m", "reason_10m"),
-            sig(20, "sig_20m", "conf_20m", "reason_20m"),
-            sig(1440, "sig_1d", "conf_1d", "reason_1d"),
+            sig(5, "sig_5m", "conf_5m", "reason_5m", "res_5m"),
+            sig(10, "sig_10m", "conf_10m", "reason_10m", "res_10m"),
+            sig(20, "sig_20m", "conf_20m", "reason_20m", "res_20m"),
+            sig(1440, "sig_1d", "conf_1d", "reason_1d", "res_1d"),
         ],
     }
 

@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
 
-type HorizonSignal = { horizon_min: number; label: string; confidence: number; reason: string };
+type HorizonSignal = {
+  horizon_min: number;
+  label: string;
+  confidence: number;
+  reason: string;
+  outcome: "pending" | "correct" | "wrong";
+};
 type SpySignal = {
   ts: string;
   symbol: string;
@@ -51,6 +57,41 @@ function fmtVolume(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
   return `${v}`;
+}
+
+function OutcomeMark({ outcome }: { outcome: HorizonSignal["outcome"] }): React.JSX.Element {
+  if (outcome === "correct")
+    return (
+      <span style={{ color: "#22c55e", marginLeft: 5 }} title="Backtest: thesis held">
+        ✓
+      </span>
+    );
+  if (outcome === "wrong")
+    return (
+      <span style={{ color: "#ef4444", marginLeft: 5 }} title="Backtest: thesis missed">
+        ✗
+      </span>
+    );
+  return (
+    <span style={{ color: "#444", marginLeft: 5 }} title="Backtest: horizon not elapsed yet">
+      ·
+    </span>
+  );
+}
+
+// Hit-rate per horizon across the loaded history (resolved rows only).
+function accuracy(history: SpySignal[]): Record<number, { hits: number; total: number }> {
+  const acc: Record<number, { hits: number; total: number }> = {};
+  for (const h of HZ) acc[h] = { hits: 0, total: 0 };
+  for (const row of history) {
+    for (const s of row.signals) {
+      if (s.outcome === "correct" || s.outcome === "wrong") {
+        acc[s.horizon_min].total += 1;
+        if (s.outcome === "correct") acc[s.horizon_min].hits += 1;
+      }
+    }
+  }
+  return acc;
 }
 
 function Badge({ s }: { s: HorizonSignal }): React.JSX.Element {
@@ -198,7 +239,35 @@ export default function SignalsPage(): React.JSX.Element {
       )}
 
       {/* History */}
-      <h2 style={{ fontSize: 14, color: "#777", fontWeight: 600, marginBottom: 8 }}>Recent</h2>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 14,
+          flexWrap: "wrap",
+          marginBottom: 8,
+        }}
+      >
+        <h2 style={{ fontSize: 14, color: "#777", fontWeight: 600 }}>Recent</h2>
+        {(() => {
+          const acc = accuracy(history);
+          const parts = HZ.filter((h) => acc[h].total > 0).map(
+            (h) =>
+              `${hzShort(h)} ${Math.round((acc[h].hits / acc[h].total) * 100)}% (${acc[h].hits}/${acc[h].total})`
+          );
+          return parts.length > 0 ? (
+            <span
+              style={{ fontSize: 11, color: "#888", fontFamily: "var(--font-mono, monospace)" }}
+            >
+              backtest hit-rate · {parts.join("  ·  ")}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "#555" }}>
+              backtest hit-rate · pending (horizons not elapsed yet)
+            </span>
+          );
+        })()}
+      </div>
       <div
         style={{
           background: "#111",
@@ -249,6 +318,7 @@ export default function SignalsPage(): React.JSX.Element {
                     }}
                   >
                     {LABEL_TEXT[s.label] ?? s.label}
+                    <OutcomeMark outcome={s.outcome} />
                   </td>
                 ))}
               </tr>
