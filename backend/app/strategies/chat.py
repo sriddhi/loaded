@@ -302,11 +302,20 @@ _TOOL_FENCE = re.compile(r"```tool\s*(\{.*?\})\s*```", re.DOTALL)
 _CC_MAX_TOOL_TURNS = 5
 
 
+# Keep the prompt bounded over long sessions (latency/timeout safety) and clamp
+# any single very-long message.
+_CC_MAX_MESSAGES = 16
+_CC_MAX_MSG_CHARS = 6000
+
+
 def _flatten(messages: list[ChatMessage]) -> str:
     lines = []
-    for m in messages:
+    for m in messages[-_CC_MAX_MESSAGES:]:
         who = "User" if m.role == "user" else "Assistant"
-        lines.append(f"{who}: {m.content}")
+        content = str(m.content)
+        if len(content) > _CC_MAX_MSG_CHARS:
+            content = content[:_CC_MAX_MSG_CHARS] + " …[truncated]"
+        lines.append(f"{who}: {content}")
     lines.append("Assistant:")
     return "\n\n".join(lines)
 
@@ -437,20 +446,30 @@ async def _chat_claude_code(messages: list[ChatMessage]) -> ChatResponse:
     prompt = _flatten(messages)
     artifact: Artifact | None = None
     text = ""
-    for _ in range(_CC_MAX_TOOL_TURNS):
-        text = await _bridge_chat(_CC_SYSTEM, prompt)
-        tool_match = _TOOL_FENCE.search(text)
-        if not tool_match:
-            break
-        try:
-            call = json.loads(tool_match.group(1), strict=False)
-            result, art = await _cc_run_tool(call.get("tool", ""), call.get("args", {}) or {})
-        except Exception as exc:  # noqa: BLE001
-            result, art = json.dumps({"error": str(exc)}), None
-        if art is not None:
-            artifact = art
-        # Feed the tool result back and let the model continue.
-        prompt += f"\n\n{text}\n\nTOOL RESULT ({call.get('tool', '')}): {result}\n\nAssistant:"
+    try:
+        for _ in range(_CC_MAX_TOOL_TURNS):
+            text = await _bridge_chat(_CC_SYSTEM, prompt)
+            tool_match = _TOOL_FENCE.search(text)
+            if not tool_match:
+                break
+            try:
+                call = json.loads(tool_match.group(1), strict=False)
+                result, art = await _cc_run_tool(call.get("tool", ""), call.get("args", {}) or {})
+            except Exception as exc:  # noqa: BLE001
+                call, result, art = {}, json.dumps({"error": str(exc)}), None
+            if art is not None:
+                artifact = art
+            # Feed the tool result back and let the model continue.
+            prompt += f"\n\n{text}\n\nTOOL RESULT ({call.get('tool', '')}): {result}\n\nAssistant:"
+    except Exception as exc:  # noqa: BLE001
+        # Never 500 the chat — the assistant service may be momentarily down or slow.
+        log.warning("[chat:cc] bridge error: %s", exc)
+        reply = (
+            "I couldn't reach the assistant service just now (it may be starting up or "
+            "busy). Please try again in a moment."
+        )
+        out = list(messages) + [ChatMessage(role="assistant", content=reply)]
+        return ChatResponse(reply=reply, messages=out, artifact=Artifact(type="text", data=reply))
 
     strategy = _extract_strategy(text)
     if strategy is not None:

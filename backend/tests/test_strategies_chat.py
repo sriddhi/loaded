@@ -144,6 +144,21 @@ async def test_claude_code_tool_loop_fetches_market_data():
 
 
 @pytest.mark.asyncio
+async def test_claude_code_degrades_gracefully_on_bridge_error():
+    async def boom(_system, _prompt):
+        raise RuntimeError("claude bridge 502: timeout")
+
+    with (
+        patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
+        patch("app.strategies.chat._bridge_chat", side_effect=boom),
+    ):
+        out = await chatmod.chat([ChatMessage(role="user", content="summarize SPY today")])
+    # No exception → no 500; a friendly assistant message instead.
+    assert out.artifact.type == "text"
+    assert "couldn't reach" in out.reply.lower()
+
+
+@pytest.mark.asyncio
 async def test_claude_code_provider_plain_text_answer():
     with (
         patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
