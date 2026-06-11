@@ -1,9 +1,58 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { color, radius, space, text } from "../../theme/tokens";
 
 export { useIsMobile } from "./useIsMobile";
+
+// ── InfoTip ───────────────────────────────────────────────────────────────────
+// A small hover popover that explains its child. Used for metric definitions.
+export function InfoTip({
+  text: tip,
+  children,
+  width = 230,
+}: {
+  text: string;
+  children: ReactNode;
+  width?: number;
+}): React.JSX.Element {
+  const [show, setShow] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", cursor: "help", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 20,
+            width,
+            background: color.surface2,
+            border: `1px solid ${color.borderStrong}`,
+            borderRadius: radius.sm,
+            padding: "8px 10px",
+            fontSize: 11,
+            fontWeight: 400,
+            lineHeight: 1.45,
+            color: color.fg,
+            letterSpacing: 0,
+            textTransform: "none",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.55)",
+            pointerEvents: "none",
+          }}
+        >
+          {tip}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // ── PageShell ─────────────────────────────────────────────────────────────────
 // Standard scrollable page frame: full-height, own scroll container (the global
@@ -66,7 +115,7 @@ export function Card({
 }: {
   children: ReactNode;
   style?: CSSProperties;
-  pad?: number;
+  pad?: number | string;
   hue?: string;
 }): React.JSX.Element {
   return (

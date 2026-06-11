@@ -5,7 +5,7 @@ Pydantic models for auth requests and responses.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -30,6 +30,13 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: datetime
     auth_provider: str | None = None
+    settings: dict[str, Any] = {}
+
+
+class SettingsUpdate(BaseModel):
+    """Partial settings to merge into the user's stored settings."""
+
+    settings: dict[str, Any]
 
 
 class TokenResponse(BaseModel):

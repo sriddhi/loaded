@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Per-user UI/preferences (e.g. metric-explainer tooltips).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- OAuth support: password_hash becomes optional; add provider identity columns.
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;

@@ -203,6 +203,38 @@ def test_me_with_valid_token(real_auth, admin_token, admin_row):  # noqa: ARG001
     assert resp.json()["email"] == "admin@loaded.app"
 
 
+def test_update_settings_merges(real_auth, admin_token, admin_row):  # noqa: ARG001
+    user = {**admin_row, "settings": {"theme": "dark"}}
+    merged_row = {
+        "id": 1,
+        "email": "admin@loaded.app",
+        "role": "admin",
+        "is_active": True,
+        "created_at": _NOW,
+        "auth_provider": None,
+        "settings": {"theme": "dark", "metric_explainers": False},
+    }
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value=merged_row)
+
+    async def fake_conn(_request):  # mimics the _conn async-gen dependency
+        yield conn
+
+    with (
+        patch("app.auth.db.get_user_by_id", AsyncMock(return_value=user)),
+        patch("app.auth.router._conn", fake_conn),
+    ):
+        resp = _tc().patch(
+            "/auth/settings",
+            headers=_auth(admin_token),
+            json={"settings": {"metric_explainers": False}},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["settings"]["metric_explainers"] is False
+    assert body["settings"]["theme"] == "dark"  # prior setting preserved
+
+
 def test_me_with_no_token(real_auth):  # noqa: ARG001
     resp = _tc().get("/auth/me")
     assert resp.status_code == 401

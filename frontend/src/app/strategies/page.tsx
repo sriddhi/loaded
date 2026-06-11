@@ -514,10 +514,16 @@ export default function StrategiesPage(): React.JSX.Element {
                       style={sel}
                     >
                       <option value="manual">manual</option>
-                      <option value="interval">interval</option>
+                      <option value="once">once</option>
+                      <option value="interval">interval (keep going)</option>
                       <option value="daily">daily</option>
                     </select>
                   </label>
+                  {scheduleKind === "once" && (
+                    <span style={{ fontSize: 12, color: "#8a8a8a" }}>
+                      runs a single time, then stops
+                    </span>
+                  )}
                   {scheduleKind === "interval" && (
                     <label>
                       every{" "}

@@ -5,8 +5,40 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
 import { BarChartView, LineChartView } from "../../components/ui/Chart";
-import { Button, Card, PageShell, SectionTitle, Stat, useIsMobile } from "../../components/ui";
+import {
+  Button,
+  Card,
+  InfoTip,
+  PageShell,
+  SectionTitle,
+  Stat,
+  useIsMobile,
+} from "../../components/ui";
 import { color, font, space } from "../../theme/tokens";
+
+// Plain-English definition for every metric, shown on hover (gated by a user setting).
+const METRIC_DESC: Record<string, string> = {
+  pe: "Price / Earnings — price per $1 of trailing annual earnings. Lower can mean cheaper; high implies the market expects growth.",
+  fwd_pe:
+    "Forward P/E — current price ÷ analysts' next-year EPS estimate. Lower than trailing P/E implies expected earnings growth.",
+  pb: "Price / Book — market cap relative to net asset (book) value. Useful for asset-heavy businesses.",
+  ps: "Price / Sales — market cap ÷ annual revenue. Handy when a company isn't yet profitable.",
+  ev_ebitda:
+    "Enterprise value ÷ EBITDA — valuation including debt, before interest/taxes/D&A. Comparable across capital structures.",
+  roe: "Return on Equity — net income ÷ shareholders' equity. How efficiently the company turns equity into profit.",
+  roa: "Return on Assets — net income ÷ total assets. Profit generated per $1 of assets.",
+  net_margin:
+    "Net margin — net income ÷ revenue. The share of each sales dollar that becomes profit.",
+  gross_margin:
+    "Gross margin — (revenue − COGS) ÷ revenue. Pricing power and unit economics before operating costs.",
+  operating_margin:
+    "Operating margin — operating income ÷ revenue. Profitability of the core business before interest & taxes.",
+  debt_to_equity:
+    "Debt / Equity — total debt ÷ shareholders' equity. Leverage; >1 means more debt than equity.",
+  current_ratio:
+    "Current ratio — current assets ÷ current liabilities. Short-term liquidity; >1 covers near-term obligations.",
+  revenue_growth_yoy: "Revenue growth YoY — this period's revenue vs the same period a year ago.",
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Tracked = {
@@ -243,7 +275,9 @@ function buildSummary(
 
 export default function FundamentalsPage(): React.JSX.Element {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, settings } = useAuth();
+  // Metric explanations on hover — on by default; toggled by a user-level setting.
+  const explainMetrics = settings.metric_explainers !== false;
   const isMobile = useIsMobile();
 
   const [tracked, setTracked] = useState<Tracked[]>([]);
@@ -487,7 +521,20 @@ export default function FundamentalsPage(): React.JSX.Element {
                     k === "fwd_pe" ? (forward?.forward_pe ?? null) : (metrics?.metrics[k] ?? null);
                   return (
                     <Card key={k} pad={space[3]}>
-                      <div style={{ color: color.muted, fontSize: 11 }}>{METRIC_LABEL[k] ?? k}</div>
+                      <div style={{ color: color.muted, fontSize: 11 }}>
+                        {explainMetrics && METRIC_DESC[k] ? (
+                          <InfoTip text={METRIC_DESC[k]}>
+                            <span style={{ borderBottom: `1px dotted ${color.faint}` }}>
+                              {METRIC_LABEL[k] ?? k}
+                            </span>
+                            <span style={{ color: color.faint, marginLeft: 4, fontSize: 10 }}>
+                              ⓘ
+                            </span>
+                          </InfoTip>
+                        ) : (
+                          (METRIC_LABEL[k] ?? k)
+                        )}
+                      </div>
                       <div
                         style={{
                           fontSize: 18,

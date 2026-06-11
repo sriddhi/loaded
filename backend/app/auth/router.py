@@ -25,7 +25,14 @@ from app.auth.db import (
     list_users,
     update_user,
 )
-from app.auth.models import RefreshRequest, TokenResponse, UserCreate, UserOut, UserUpdate
+from app.auth.models import (
+    RefreshRequest,
+    SettingsUpdate,
+    TokenResponse,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
 from app.auth.security import (
     clear_auth_cookies,
     create_access_token,
@@ -336,6 +343,29 @@ async def _resolve_google_user(conn: asyncpg.Connection, *, google_sub: str, ema
 @router.get("/me", response_model=UserOut)
 async def me(current_user: dict[str, Any] = Depends(get_current_user)) -> Any:
     return current_user
+
+
+@router.patch("/settings", response_model=UserOut)
+async def update_settings(
+    body: SettingsUpdate,
+    request: Request,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> Any:
+    """Merge a partial settings patch into the user's stored settings."""
+    current = current_user.get("settings") or {}
+    if isinstance(current, str):  # defensive: handle a non-codec connection
+        import json
+
+        current = json.loads(current or "{}")
+    merged = {**current, **body.settings}
+    async for conn in _conn(request):
+        row = await conn.fetchrow(
+            "UPDATE users SET settings = $1 WHERE id = $2 "
+            "RETURNING id, email, role, is_active, created_at, auth_provider, settings",
+            merged,
+            current_user["id"],
+        )
+    return dict(row)
 
 
 # ── Admin: list users ──────────────────────────────────────────────────────────

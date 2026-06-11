@@ -151,6 +151,9 @@ def _is_due(strategy: dict[str, Any], now_utc: datetime) -> bool:
     last = strategy.get("last_run_at")
     if kind == "manual":
         return False
+    if kind == "once":
+        # Run a single time (when it has never run), then never again.
+        return last is None
     if kind == "interval":
         minutes = int(rc.get("interval_minutes", 60))
         if last is None:

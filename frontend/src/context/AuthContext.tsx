@@ -3,12 +3,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "../lib/api";
 
+export type UserSettings = Record<string, unknown>;
 export type User = {
   id: number;
   email: string;
   role: string;
   is_active: boolean;
   auth_provider?: string | null;
+  settings?: UserSettings;
 };
 
 type AuthState = {
@@ -16,6 +18,8 @@ type AuthState = {
   loading: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
+  settings: UserSettings;
+  updateSettings: (patch: UserSettings) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -40,12 +44,25 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setUser(null);
   }, []);
 
+  const updateSettings = useCallback(async (patch: UserSettings): Promise<void> => {
+    // Optimistic, then persist; the response is the authoritative merged user.
+    setUser((u) => (u ? { ...u, settings: { ...(u.settings ?? {}), ...patch } } : u));
+    const res = await apiFetch("/auth/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: patch }),
+    });
+    if (res.ok) setUser((await res.json()) as User);
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, refresh, logout, settings: user?.settings ?? {}, updateSettings }}
+    >
       {children}
     </AuthContext.Provider>
   );

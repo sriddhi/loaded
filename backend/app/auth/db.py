@@ -39,8 +39,8 @@ async def get_user_by_email(conn: asyncpg.Connection, email: str) -> dict[str, A
 
 async def get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict[str, Any] | None:
     row = await conn.fetchrow(
-        "SELECT id, email, password_hash, role, is_active, created_at, auth_provider, google_sub "
-        "FROM users WHERE id = $1",
+        "SELECT id, email, password_hash, role, is_active, created_at, auth_provider, "
+        "google_sub, settings FROM users WHERE id = $1",
         user_id,
     )
     return dict(row) if row else None

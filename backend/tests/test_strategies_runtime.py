@@ -61,6 +61,17 @@ def test_is_due_interval_and_manual():
     assert runtime._is_due(due, now) is True
 
 
+def test_is_due_once_runs_a_single_time():
+    now = datetime.now(UTC)
+    never_run = {"run_config": {"schedule_kind": "once"}, "last_run_at": None}
+    assert runtime._is_due(never_run, now) is True  # runs once
+    already_ran = {
+        "run_config": {"schedule_kind": "once"},
+        "last_run_at": now - timedelta(minutes=1),
+    }
+    assert runtime._is_due(already_ran, now) is False  # never again
+
+
 @pytest.mark.asyncio
 async def test_run_strategy_once_signal_writes_run_row():
     conn = MagicMock()
