@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
+from app.fundamentals import outlook as outlook_mod
 from app.fundamentals.forward import forward_metrics
 from app.fundamentals.ingest import ingest_statements
 from app.fundamentals.metrics import FundamentalMetrics, MetricContext, available_metrics, to_ttm
 from app.fundamentals.models import (
     EquityFinancials,
     ForwardResponse,
+    HorizonOutlook,
     MetricsResponse,
+    OutlookResponse,
     PeriodType,
     PriceResponse,
     RefreshResult,
@@ -291,4 +295,57 @@ async def forward(symbol: str, request: Request) -> ForwardResponse:
         forward_eps=fwd["forward_eps"],
         trailing_eps=fwd["trailing_eps"],
         forward_pe=fwd["forward_pe"],
+    )
+
+
+@router.get("/{symbol}/outlook", response_model=OutlookResponse)
+async def outlook_endpoint(symbol: str, request: Request) -> OutlookResponse:
+    """Heuristic fair value + multi-horizon buy/sell/neutral + category tags."""
+    await _refresh_then_track(request, symbol)
+    async with _pool(request).acquire() as conn:
+        series = await _load_series(conn, symbol, "annual")
+    if not series:
+        raise HTTPException(status_code=404, detail=f"No statements for {symbol.upper()}")
+
+    resolved = await resolve_price(symbol, _price_cache(request))
+    price = resolved[0] if resolved is not None else None
+    fwd = await forward_metrics(symbol, price)
+
+    # Metrics we need (price-aware).
+    ctx = MetricContext(
+        latest=series[0], series=list(series), period_type="annual", live_price=price
+    )
+    m, _unknown = FundamentalMetrics(ctx).compute(
+        ["pe", "pb", "roe", "net_margin", "debt_to_equity", "revenue_growth_yoy"]
+    )
+
+    fair = outlook_mod.compute_fair_value(fwd["forward_eps"], m.get("revenue_growth_yoy"))
+    upside_pct: float | None = None
+    if fair is not None and price:
+        upside_pct = round((fair["value"] - price) / price * 100, 2)
+
+    closes = await asyncio.to_thread(outlook_mod.daily_closes, symbol.upper())
+    horizons = outlook_mod.horizon_outlook(
+        returns=outlook_mod.returns_from_closes(closes),
+        upside_pct=upside_pct,
+        rev_growth=m.get("revenue_growth_yoy"),
+        roe=m.get("roe"),
+        net_margin=m.get("net_margin"),
+    )
+    tags = outlook_mod.category_tags(
+        rev_growth=m.get("revenue_growth_yoy"),
+        pe=m.get("pe"),
+        pb=m.get("pb"),
+        roe=m.get("roe"),
+        net_margin=m.get("net_margin"),
+        debt_to_equity=m.get("debt_to_equity"),
+        net_income=series[0].net_income,
+    )
+    return OutlookResponse(
+        symbol=symbol.upper(),
+        price=price,
+        fair_value=fair,
+        upside_pct=upside_pct,
+        horizons=[HorizonOutlook(**h) for h in horizons],
+        tags=tags,
     )

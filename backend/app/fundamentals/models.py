@@ -146,6 +146,22 @@ class ForwardResponse(BaseModel):
     forward_pe: float | None = None  # price / forward_eps; None when not determinable
 
 
+class HorizonOutlook(BaseModel):
+    horizon: str  # 1d | 1w | 1mo | 1y | 3y | 5y
+    label: str  # buy | sell | neutral
+    confidence: int  # 0-100
+
+
+class OutlookResponse(BaseModel):
+    symbol: str
+    price: float | None = None
+    fair_value: dict[str, Any] | None = None
+    upside_pct: float | None = None  # to fair value
+    horizons: list[HorizonOutlook] = []
+    tags: list[str] = []
+    disclaimer: str = "Heuristic estimate — not a prediction or financial advice."
+
+
 class TrackedEquity(BaseModel):
     symbol: str
     name: str | None = None

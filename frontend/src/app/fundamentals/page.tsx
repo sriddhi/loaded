@@ -81,6 +81,25 @@ type ForwardResp = {
   trailing_eps: number | null;
   forward_pe: number | null;
 };
+type HorizonOut = { horizon: string; label: string; confidence: number };
+type OutlookResp = {
+  symbol: string;
+  price: number | null;
+  fair_value: { value: number; low: number; high: number; multiple: number; method: string } | null;
+  upside_pct: number | null;
+  horizons: HorizonOut[];
+  tags: string[];
+  disclaimer: string;
+};
+
+const HORIZON_LABEL: Record<string, string> = {
+  "1d": "1 day",
+  "1w": "1 week",
+  "1mo": "1 month",
+  "1y": "1 year",
+  "3y": "3 years",
+  "5y": "5 years",
+};
 
 // ── Formatters (money is integer cents) ───────────────────────────────────────
 function fmtMoney(cents: number | null): string {
@@ -286,6 +305,7 @@ export default function FundamentalsPage(): React.JSX.Element {
   const [metrics, setMetrics] = useState<MetricsResp | null>(null);
   const [price, setPrice] = useState<PriceResp | null>(null);
   const [forward, setForward] = useState<ForwardResp | null>(null);
+  const [outlook, setOutlook] = useState<OutlookResp | null>(null);
   const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
   const [busy, setBusy] = useState(false);
   const [addInput, setAddInput] = useState("");
@@ -310,18 +330,20 @@ export default function FundamentalsPage(): React.JSX.Element {
       setBusy(true);
       setError(null);
       try {
-        const [sRes, mRes, pRes, fRes] = await Promise.all([
+        const [sRes, mRes, pRes, fRes, oRes] = await Promise.all([
           apiFetch(`/fundamentals/${sym}/statements?period=${per}`),
           apiFetch(
             `/fundamentals/${sym}/metrics?metrics=${METRIC_KEYS.filter((k) => k !== "fwd_pe").join(",")}&period=${per}`
           ),
           apiFetch(`/fundamentals/${sym}/price`),
           apiFetch(`/fundamentals/${sym}/forward`),
+          apiFetch(`/fundamentals/${sym}/outlook`),
         ]);
         setStmts(sRes.ok ? ((await sRes.json()) as StatementsResp) : null);
         setMetrics(mRes.ok ? ((await mRes.json()) as MetricsResp) : null);
         setPrice(pRes.ok ? ((await pRes.json()) as PriceResp) : null);
         setForward(fRes.ok ? ((await fRes.json()) as ForwardResp) : null);
+        setOutlook(oRes.ok ? ((await oRes.json()) as OutlookResp) : null);
         if (!sRes.ok) setError(`No statements for ${sym}`);
       } catch {
         setError("Failed to load fundamentals.");
@@ -595,6 +617,140 @@ export default function FundamentalsPage(): React.JSX.Element {
                       </li>
                     ))}
                   </ul>
+                </Card>
+              )}
+
+              {/* Outlook: fair value + multi-horizon call + tags */}
+              {outlook && (
+                <Card pad={space[4]} style={{ marginBottom: space[5] }}>
+                  <SectionTitle
+                    right={
+                      <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {outlook.tags.map((t) => (
+                          <span
+                            key={t}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              border: `1px solid ${t === "growth" ? color.hue : t === "value" ? color.up : t === "high-leverage" || t === "unprofitable" ? color.warn : color.border}`,
+                              color:
+                                t === "growth"
+                                  ? color.hue
+                                  : t === "value"
+                                    ? color.up
+                                    : t === "high-leverage" || t === "unprofitable"
+                                      ? color.warn
+                                      : color.muted,
+                            }}
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </span>
+                    }
+                  >
+                    Outlook
+                  </SectionTitle>
+
+                  {outlook.fair_value && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: space[5],
+                        flexWrap: "wrap",
+                        marginBottom: space[3],
+                      }}
+                    >
+                      <Stat
+                        label="Fair value (heuristic)"
+                        value={`$${outlook.fair_value.value.toFixed(2)}`}
+                        sub={`range $${outlook.fair_value.low.toFixed(0)}–$${outlook.fair_value.high.toFixed(0)}`}
+                      />
+                      <Stat
+                        label="Upside to fair value"
+                        value={
+                          outlook.upside_pct === null
+                            ? "—"
+                            : `${outlook.upside_pct >= 0 ? "+" : ""}${outlook.upside_pct.toFixed(1)}%`
+                        }
+                        tone={
+                          outlook.upside_pct === null
+                            ? color.muted
+                            : outlook.upside_pct >= 0
+                              ? color.up
+                              : color.down
+                        }
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ color: color.muted, fontSize: 11, marginBottom: 6 }}>
+                    Directional call by horizon (buy / sell / neutral + confidence)
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+                      gap: space[2],
+                    }}
+                  >
+                    {outlook.horizons.map((h) => {
+                      const c =
+                        h.label === "buy"
+                          ? color.up
+                          : h.label === "sell"
+                            ? color.down
+                            : color.muted;
+                      return (
+                        <div
+                          key={h.horizon}
+                          style={{
+                            border: `1px solid ${color.border}`,
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                          }}
+                        >
+                          <div style={{ fontSize: 10, color: color.muted }}>
+                            {HORIZON_LABEL[h.horizon] ?? h.horizon}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 800,
+                              color: c,
+                              textTransform: "uppercase",
+                              marginTop: 2,
+                            }}
+                          >
+                            {h.label}
+                          </div>
+                          <div
+                            style={{
+                              height: 4,
+                              background: color.surface2,
+                              borderRadius: 3,
+                              marginTop: 6,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{ width: `${h.confidence}%`, height: "100%", background: c }}
+                            />
+                          </div>
+                          <div style={{ fontSize: 10, color: color.faint, marginTop: 3 }}>
+                            conf {h.confidence}%
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ color: color.faint, fontSize: 10, marginTop: 8 }}>
+                    {outlook.disclaimer}
+                  </div>
                 </Card>
               )}
 
