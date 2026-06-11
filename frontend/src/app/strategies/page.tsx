@@ -430,15 +430,11 @@ export default function StrategiesPage(): React.JSX.Element {
 
         {/* ── Right: artifact / details ── */}
         <div style={{ ...card, overflowY: "auto", padding: 16, minHeight: 0 }}>
-          {!artifact && (
-            <div style={{ color: "#555", fontSize: 13 }}>
-              The result of your conversation shows up here.
-            </div>
-          )}
-
-          {artifact?.type === "text" && (
-            <div style={{ color: "#bbb", fontSize: 14, whiteSpace: "pre-wrap" }}>
-              {String(artifact.data ?? "")}
+          {(!artifact || artifact.type === "text") && (
+            <div style={{ color: "#555", fontSize: 13, lineHeight: 1.6 }}>
+              Structured results show up here — ask me to <strong>build a strategy</strong> (you’ll
+              get an editable config you can save &amp; backtest), or{" "}
+              <strong>pull market data</strong>. The conversation itself stays on the left.
             </div>
           )}
           {artifact?.type === "market_data" && (

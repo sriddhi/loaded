@@ -19,6 +19,7 @@ from app.fundamentals.models import (
     TrackedEquity,
 )
 from app.fundamentals.price_cache import PriceStore
+from app.fundamentals.price_fallback import resolve_price
 from app.fundamentals.refresh import ensure_fresh
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
@@ -232,11 +233,9 @@ async def metrics(
         latest = series[0]
 
     price_used: float | None = None
-    cache = _price_cache(request)
-    if cache is not None:
-        hit = cache.get(symbol)
-        if hit is not None:
-            price_used = hit[0]
+    resolved = await resolve_price(symbol, _price_cache(request))
+    if resolved is not None:
+        price_used = resolved[0]
 
     ctx = MetricContext(
         latest=latest, series=list(series), period_type=period, live_price=price_used
@@ -260,18 +259,19 @@ async def metrics(
 
 @router.get("/{symbol}/price", response_model=PriceResponse)
 async def price(symbol: str, request: Request) -> PriceResponse:
-    cache = _price_cache(request)
-    hit = cache.get(symbol) if cache is not None else None
-    if hit is None:
+    resolved = await resolve_price(symbol, _price_cache(request))
+    if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="price unavailable: websocket not connected or no tick yet",
+            detail="price unavailable: no live tick and REST quote failed",
         )
-    px, ts_ms = hit
+    px, ts_ms, source = resolved
     now_ms = int(time.time() * 1000)
+    # A websocket tick goes stale after STALE_AFTER_MS; a REST quote is fresh now.
+    stale = source == "websocket" and (now_ms - ts_ms) > STALE_AFTER_MS
     return PriceResponse(
         symbol=symbol.upper(),
         price=px,
         ts=datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
-        stale=(now_ms - ts_ms) > STALE_AFTER_MS,
+        stale=stale,
     )

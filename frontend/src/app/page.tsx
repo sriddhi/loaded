@@ -43,7 +43,7 @@ export default function Home(): React.JSX.Element {
       <nav style={{ display: "flex", gap: 20, marginTop: 24 }}>
         {[
           { href: "/fundamentals", label: "Fundamentals" },
-          { href: "/signals", label: "SPY Signals" },
+          { href: "/signals", label: "Signals" },
           { href: "/strategies", label: "Strategy Lab" },
           { href: "/tools", label: "Tools" },
         ].map((l) => (

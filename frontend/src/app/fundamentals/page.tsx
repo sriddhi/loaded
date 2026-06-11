@@ -223,7 +223,8 @@ export default function FundamentalsPage(): React.JSX.Element {
       style={{
         background: "#0a0a0a",
         color: "#f5f5f5",
-        minHeight: "100vh",
+        height: "100vh",
+        overflowY: "auto",
         padding: "32px 28px",
         fontFamily: "inherit",
       }}

@@ -19,6 +19,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 def _bypass_freshness():
     # The lazy-TTL refresh path + as_of query are covered in test_fundamentals_refresh;
     # bypass them here so the router tests exercise routing/serialization only.
+    from app.fundamentals import price_fallback
+
+    price_fallback._rest_cache.clear()
     with (
         patch("app.fundamentals.router._refresh_then_track", AsyncMock(return_value=None)),
         patch("app.fundamentals.router._as_of", AsyncMock(return_value=None)),
@@ -92,7 +95,11 @@ def test_statements_404_when_empty():
 
 
 def test_metrics_subset_and_valuation_needs_price():
-    with patch("app.fundamentals.router._load_series", AsyncMock(return_value=_SERIES)):
+    # No websocket tick AND the REST fallback yields nothing → valuation stays None.
+    with (
+        patch("app.fundamentals.router._load_series", AsyncMock(return_value=_SERIES)),
+        patch("app.fundamentals.price_fallback._yf_price", return_value=None),
+    ):
         resp = _client(price_cache=None).get(
             "/fundamentals/NVDA/metrics?metrics=roe,pe&period=annual"
         )
@@ -100,8 +107,22 @@ def test_metrics_subset_and_valuation_needs_price():
     body = resp.json()
     assert set(body["metrics"]) == {"roe", "pe"}
     assert body["metrics"]["roe"] == 0.5
-    assert body["metrics"]["pe"] is None  # no live price
+    assert body["metrics"]["pe"] is None  # no price anywhere
     assert body["price_used"] is None
+
+
+def test_metrics_uses_rest_fallback_when_no_tick():
+    # No websocket tick, but the REST fallback returns a price → valuation computes.
+    with (
+        patch("app.fundamentals.router._load_series", AsyncMock(return_value=_SERIES)),
+        patch("app.fundamentals.price_fallback._yf_price", return_value=100.0),
+    ):
+        resp = _client(price_cache=InMemoryPriceCache()).get(
+            "/fundamentals/NVDA/metrics?metrics=pe"
+        )
+    body = resp.json()
+    assert body["price_used"] == 100.0
+    assert body["metrics"]["pe"] == 20.0
 
 
 def test_metrics_uses_live_price():
@@ -120,9 +141,19 @@ def test_metrics_unknown_name_422():
     assert resp.status_code == 422
 
 
-def test_price_503_when_no_tick():
-    resp = _client(price_cache=InMemoryPriceCache()).get("/fundamentals/NVDA/price")
+def test_price_503_when_no_tick_and_rest_fails():
+    with patch("app.fundamentals.price_fallback._yf_price", return_value=None):
+        resp = _client(price_cache=InMemoryPriceCache()).get("/fundamentals/NVDA/price")
     assert resp.status_code == 503
+
+
+def test_price_rest_fallback_when_no_tick():
+    with patch("app.fundamentals.price_fallback._yf_price", return_value=77.0):
+        resp = _client(price_cache=InMemoryPriceCache()).get("/fundamentals/NVDA/price")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["price"] == 77.0
+    assert body["stale"] is False  # a REST quote is fresh
 
 
 def test_price_ok_with_tick():

@@ -89,7 +89,8 @@ export default function LoginPage(): React.JSX.Element {
   return (
     <main
       style={{
-        minHeight: "100vh",
+        height: "100vh",
+        overflowY: "auto",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

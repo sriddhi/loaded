@@ -79,12 +79,17 @@ function OutcomeMark({ outcome }: { outcome: HorizonSignal["outcome"] }): React.
   );
 }
 
-// Hit-rate per horizon across the loaded history (resolved rows only).
-function accuracy(history: SpySignal[]): Record<number, { hits: number; total: number }> {
-  const acc: Record<number, { hits: number; total: number }> = {};
-  for (const h of HZ) acc[h] = { hits: 0, total: 0 };
+// Hit-rate + mean confidence per horizon across the loaded history.
+// hits/total are over resolved rows; confSum/confN are over ALL rows (every row
+// carries a confidence, resolved or not).
+type Acc = { hits: number; total: number; confSum: number; confN: number };
+function accuracy(history: SpySignal[]): Record<number, Acc> {
+  const acc: Record<number, Acc> = {};
+  for (const h of HZ) acc[h] = { hits: 0, total: 0, confSum: 0, confN: 0 };
   for (const row of history) {
     for (const s of row.signals) {
+      acc[s.horizon_min].confSum += s.confidence;
+      acc[s.horizon_min].confN += 1;
       if (s.outcome === "correct" || s.outcome === "wrong") {
         acc[s.horizon_min].total += 1;
         if (s.outcome === "correct") acc[s.horizon_min].hits += 1;
@@ -251,19 +256,26 @@ export default function SignalsPage(): React.JSX.Element {
         <h2 style={{ fontSize: 14, color: "#777", fontWeight: 600 }}>Recent</h2>
         {(() => {
           const acc = accuracy(history);
-          const parts = HZ.filter((h) => acc[h].total > 0).map(
+          const hitParts = HZ.filter((h) => acc[h].total > 0).map(
             (h) =>
               `${hzShort(h)} ${Math.round((acc[h].hits / acc[h].total) * 100)}% (${acc[h].hits}/${acc[h].total})`
           );
-          return parts.length > 0 ? (
+          const confParts = HZ.filter((h) => acc[h].confN > 0).map(
+            (h) => `${hzShort(h)} ${Math.round((acc[h].confSum / acc[h].confN) * 100)}%`
+          );
+          return (
             <span
               style={{ fontSize: 11, color: "#888", fontFamily: "var(--font-mono, monospace)" }}
             >
-              backtest hit-rate · {parts.join("  ·  ")}
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: "#555" }}>
-              backtest hit-rate · pending (horizons not elapsed yet)
+              {hitParts.length > 0
+                ? `backtest hit-rate · ${hitParts.join("  ·  ")}`
+                : "backtest hit-rate · pending (horizons not elapsed yet)"}
+              {confParts.length > 0 && (
+                <>
+                  <span style={{ color: "#444" }}> &nbsp;|&nbsp; </span>
+                  avg confidence · {confParts.join("  ·  ")}
+                </>
+              )}
             </span>
           );
         })()}

@@ -267,12 +267,22 @@ async def chat(messages: list[ChatMessage]) -> ChatResponse:
 
 # ── Provider: claude_code (host bridge → local subscription) ──────────────────
 
+# Standalone prompt (does NOT inherit SYSTEM_PROMPT's tool language — in this mode
+# there are no tools, so referencing them makes the model hallucinate permission
+# prompts / external auth).
 _CC_SYSTEM = (
-    SYSTEM_PROMPT + "\n\nWhen you propose or edit a strategy, include a fenced ```json code block "
-    "containing an object with keys: name, description, type (one of MOMENTUM, "
-    "BREAKOUT, MEAN_REVERSION, CUSTOM), parameters, filters, signal_logic. Put a "
-    "one-line summary outside the block. (Live market-data tools are unavailable in "
-    "this mode — answer from general knowledge and say so if asked for live numbers.)"
+    "You are Loaded's trading-strategy assistant. You design and iterate quantitative "
+    "trading strategies and explain trading concepts.\n\n"
+    "You have NO tools and NO live market data in this mode. Do not mention tools, "
+    "permissions, or connecting to data providers. If asked for a live number (a "
+    "current price, today's most-active stock, etc.), say you can't fetch live data "
+    "here and offer to help build or refine a strategy instead.\n\n"
+    "When you propose or edit a strategy, include a fenced ```json code block with an "
+    "object: name, description, type (one of MOMENTUM, BREAKOUT, MEAN_REVERSION, "
+    "CUSTOM), parameters (numeric defaults), filters, signal_logic (a single string: "
+    "exact entry, exit, and stop rules). Put a one-line summary outside the block.\n\n"
+    "This is a paper-trading / indicator tool — never give personalized financial "
+    "advice. Be concise."
 )
 
 # Capture a fenced JSON block (greedy inner to allow nested braces in the config).
