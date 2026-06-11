@@ -191,6 +191,18 @@
       "sha256": "165cacddf836c6bcd0f2922d746426549da55245d1036400f13da7bc202ffc24",
       "locked_at": "2026-06-10T21:03:45Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/fundamentals/dcf_generator.md",
+      "sha256": "ecc60d0750e4581091319af962971226fce13771672014db40220b6fb45ffa89",
+      "locked_at": "2026-06-11T15:42:20Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/fundamentals/dcf_evaluator.md",
+      "sha256": "a6d7d25ac9d3ec4bb1a5144b6b3d474b7a68a3852ee76743956e03799bf2a58d",
+      "locked_at": "2026-06-11T15:42:20Z",
+      "version": "1.0"
     }
   ]
 }

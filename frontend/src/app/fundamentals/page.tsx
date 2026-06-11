@@ -101,6 +101,50 @@ const HORIZON_LABEL: Record<string, string> = {
   "5y": "5 years",
 };
 
+type DcfResp = {
+  symbol: string;
+  verdict: "undervalued" | "fair" | "overvalued" | "not_valuable";
+  gate_failures: string[];
+  price: number | null;
+  intrinsic_per_share: number | null;
+  buy_below: number | null;
+  upside_pct: number | null;
+  assumptions: Record<string, number | null> | null;
+  sensitivity: { growth: number; cells: { discount: number; intrinsic: number }[] }[] | null;
+  disclaimer: string;
+};
+
+const DCF_VERDICT_COLOR: Record<string, string> = {
+  undervalued: color.up,
+  fair: color.muted,
+  overvalued: color.down,
+  not_valuable: color.warn,
+};
+
+const DCF_ASSUMPTION_LABEL: Record<string, [string, "usd" | "pct" | "num"]> = {
+  base_owner_earnings_usd: ["Base owner earnings", "usd"],
+  stage1_growth: ["Stage-1 growth (yrs 1-5)", "pct"],
+  terminal_growth: ["Terminal growth", "pct"],
+  discount_rate: ["Discount rate", "pct"],
+  margin_of_safety: ["Margin of safety", "pct"],
+  net_debt_usd: ["Net debt", "usd"],
+  owner_earnings_cv: ["Owner-earnings variability (CV)", "num"],
+  debt_to_equity: ["Debt / equity", "num"],
+  roic: ["ROIC", "pct"],
+};
+
+function fmtAssumption(kind: "usd" | "pct" | "num", v: number | null): string {
+  if (v === null || v === undefined) return "—";
+  if (kind === "usd") {
+    const a = Math.abs(v);
+    if (a >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+    if (a >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+    return `$${v.toFixed(0)}`;
+  }
+  if (kind === "pct") return `${(v * 100).toFixed(1)}%`;
+  return v.toFixed(2);
+}
+
 // ── Formatters (money is integer cents) ───────────────────────────────────────
 function fmtMoney(cents: number | null): string {
   if (cents === null || cents === undefined) return "—";
@@ -306,6 +350,7 @@ export default function FundamentalsPage(): React.JSX.Element {
   const [price, setPrice] = useState<PriceResp | null>(null);
   const [forward, setForward] = useState<ForwardResp | null>(null);
   const [outlook, setOutlook] = useState<OutlookResp | null>(null);
+  const [dcf, setDcf] = useState<DcfResp | null>(null);
   const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
   const [busy, setBusy] = useState(false);
   const [addInput, setAddInput] = useState("");
@@ -330,7 +375,7 @@ export default function FundamentalsPage(): React.JSX.Element {
       setBusy(true);
       setError(null);
       try {
-        const [sRes, mRes, pRes, fRes, oRes] = await Promise.all([
+        const [sRes, mRes, pRes, fRes, oRes, dRes] = await Promise.all([
           apiFetch(`/fundamentals/${sym}/statements?period=${per}`),
           apiFetch(
             `/fundamentals/${sym}/metrics?metrics=${METRIC_KEYS.filter((k) => k !== "fwd_pe").join(",")}&period=${per}`
@@ -338,12 +383,14 @@ export default function FundamentalsPage(): React.JSX.Element {
           apiFetch(`/fundamentals/${sym}/price`),
           apiFetch(`/fundamentals/${sym}/forward`),
           apiFetch(`/fundamentals/${sym}/outlook`),
+          apiFetch(`/fundamentals/${sym}/dcf`),
         ]);
         setStmts(sRes.ok ? ((await sRes.json()) as StatementsResp) : null);
         setMetrics(mRes.ok ? ((await mRes.json()) as MetricsResp) : null);
         setPrice(pRes.ok ? ((await pRes.json()) as PriceResp) : null);
         setForward(fRes.ok ? ((await fRes.json()) as ForwardResp) : null);
         setOutlook(oRes.ok ? ((await oRes.json()) as OutlookResp) : null);
+        setDcf(dRes.ok ? ((await dRes.json()) as DcfResp) : null);
         if (!sRes.ok) setError(`No statements for ${sym}`);
       } catch {
         setError("Failed to load fundamentals.");
@@ -750,6 +797,181 @@ export default function FundamentalsPage(): React.JSX.Element {
                   </div>
                   <div style={{ color: color.faint, fontSize: 10, marginTop: 8 }}>
                     {outlook.disclaimer}
+                  </div>
+                </Card>
+              )}
+
+              {/* DCF — intrinsic value (owner earnings, Buffett-style constraints) */}
+              {dcf && (
+                <Card pad={space[4]} style={{ marginBottom: space[5] }}>
+                  <SectionTitle
+                    right={
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          padding: "2px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${DCF_VERDICT_COLOR[dcf.verdict] ?? color.muted}`,
+                          color: DCF_VERDICT_COLOR[dcf.verdict] ?? color.muted,
+                        }}
+                      >
+                        {dcf.verdict.replace("_", " ")}
+                      </span>
+                    }
+                  >
+                    DCF — intrinsic value
+                  </SectionTitle>
+
+                  {dcf.verdict === "not_valuable" ? (
+                    <div style={{ fontSize: 13, color: color.muted, lineHeight: 1.6 }}>
+                      <div style={{ color: color.fg, marginBottom: 4 }}>
+                        Refusing to value this business — no number is better than a wrong number.
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {dcf.gate_failures.map((f) => (
+                          <li key={f}>{f}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: space[5],
+                          flexWrap: "wrap",
+                          marginBottom: space[3],
+                        }}
+                      >
+                        <Stat
+                          label={
+                            <InfoTip text="Present value of 10y projected owner earnings (OCF − capex, conservatively based) plus a Gordon terminal value, minus net debt, per diluted share.">
+                              <span style={{ borderBottom: `1px dotted ${color.faint}` }}>
+                                Intrinsic / share
+                              </span>
+                            </InfoTip>
+                          }
+                          value={
+                            dcf.intrinsic_per_share === null
+                              ? "—"
+                              : `$${dcf.intrinsic_per_share.toFixed(2)}`
+                          }
+                          sub={dcf.price !== null ? `price $${dcf.price.toFixed(2)}` : undefined}
+                        />
+                        <Stat
+                          label={
+                            <InfoTip text="Intrinsic value discounted by the margin of safety — the price below which the assumptions can be meaningfully wrong and the purchase still works out.">
+                              <span style={{ borderBottom: `1px dotted ${color.faint}` }}>
+                                Buy below
+                              </span>
+                            </InfoTip>
+                          }
+                          value={dcf.buy_below === null ? "—" : `$${dcf.buy_below.toFixed(2)}`}
+                          tone={color.hue}
+                          sub={
+                            dcf.assumptions?.margin_of_safety != null
+                              ? `MoS ${(Number(dcf.assumptions.margin_of_safety) * 100).toFixed(0)}%`
+                              : undefined
+                          }
+                        />
+                        <Stat
+                          label="Upside to intrinsic"
+                          value={
+                            dcf.upside_pct === null
+                              ? "—"
+                              : `${dcf.upside_pct >= 0 ? "+" : ""}${dcf.upside_pct.toFixed(1)}%`
+                          }
+                          tone={
+                            dcf.upside_pct === null
+                              ? color.muted
+                              : dcf.upside_pct >= 0
+                                ? color.up
+                                : color.down
+                          }
+                        />
+                      </div>
+
+                      {dcf.assumptions && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+                            gap: `${space[1]}px ${space[4]}px`,
+                            marginBottom: space[3],
+                            fontSize: 12,
+                          }}
+                        >
+                          {Object.entries(DCF_ASSUMPTION_LABEL).map(([key, [label, kind]]) =>
+                            key in (dcf.assumptions ?? {}) ? (
+                              <div
+                                key={key}
+                                style={{ display: "flex", justifyContent: "space-between", gap: 8 }}
+                              >
+                                <span style={{ color: color.muted }}>{label}</span>
+                                <span style={{ fontFamily: font.mono }}>
+                                  {fmtAssumption(kind, dcf.assumptions?.[key] ?? null)}
+                                </span>
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      )}
+
+                      {dcf.sensitivity && (
+                        <>
+                          <div style={{ color: color.muted, fontSize: 11, marginBottom: 4 }}>
+                            Sensitivity — intrinsic/share across growth × discount
+                          </div>
+                          <table
+                            style={{
+                              borderCollapse: "collapse",
+                              fontFamily: font.mono,
+                              fontSize: 12,
+                            }}
+                          >
+                            <thead>
+                              <tr style={{ color: color.faint }}>
+                                <th style={{ padding: "4px 12px", textAlign: "left" }}>growth ↓</th>
+                                {dcf.sensitivity[0]?.cells.map((c) => (
+                                  <th
+                                    key={c.discount}
+                                    style={{ padding: "4px 12px", textAlign: "right" }}
+                                  >
+                                    d={(c.discount * 100).toFixed(0)}%
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dcf.sensitivity.map((row) => (
+                                <tr
+                                  key={row.growth}
+                                  style={{ borderTop: `1px solid ${color.border}` }}
+                                >
+                                  <td style={{ padding: "4px 12px", color: color.muted }}>
+                                    {(row.growth * 100).toFixed(1)}%
+                                  </td>
+                                  {row.cells.map((c) => (
+                                    <td
+                                      key={c.discount}
+                                      style={{ padding: "4px 12px", textAlign: "right" }}
+                                    >
+                                      ${c.intrinsic.toFixed(2)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </>
+                      )}
+                    </>
+                  )}
+                  <div style={{ color: color.faint, fontSize: 10, marginTop: 10 }}>
+                    {dcf.disclaimer}
                   </div>
                 </Card>
               )}

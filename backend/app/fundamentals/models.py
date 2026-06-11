@@ -146,6 +146,19 @@ class ForwardResponse(BaseModel):
     forward_pe: float | None = None  # price / forward_eps; None when not determinable
 
 
+class DcfResponse(BaseModel):
+    symbol: str
+    verdict: str  # undervalued | fair | overvalued | not_valuable
+    gate_failures: list[str] = []
+    price: float | None = None
+    intrinsic_per_share: float | None = None
+    buy_below: float | None = None
+    upside_pct: float | None = None
+    assumptions: dict[str, Any] | None = None
+    sensitivity: list[dict[str, Any]] | None = None
+    disclaimer: str = ""
+
+
 class HorizonOutlook(BaseModel):
     horizon: str  # 1d | 1w | 1mo | 1y | 3y | 5y
     label: str  # buy | sell | neutral

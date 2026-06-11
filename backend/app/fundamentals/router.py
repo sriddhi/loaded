@@ -9,10 +9,12 @@ from typing import Any
 
 import asyncpg
 from app.fundamentals import outlook as outlook_mod
+from app.fundamentals.dcf import run_dcf
 from app.fundamentals.forward import forward_metrics
 from app.fundamentals.ingest import ingest_statements
 from app.fundamentals.metrics import FundamentalMetrics, MetricContext, available_metrics, to_ttm
 from app.fundamentals.models import (
+    DcfResponse,
     EquityFinancials,
     ForwardResponse,
     HorizonOutlook,
@@ -349,3 +351,23 @@ async def outlook_endpoint(symbol: str, request: Request) -> OutlookResponse:
         horizons=[HorizonOutlook(**h) for h in horizons],
         tags=tags,
     )
+
+
+@router.get("/{symbol}/dcf", response_model=DcfResponse)
+async def dcf_endpoint(symbol: str, request: Request) -> DcfResponse:
+    """Buffett-grade owner-earnings DCF. Refuses (not_valuable) when gates fail."""
+    await _refresh_then_track(request, symbol)
+    async with _pool(request).acquire() as conn:
+        series = await _load_series(conn, symbol, "annual")
+    if not series:
+        raise HTTPException(status_code=404, detail=f"No statements for {symbol.upper()}")
+
+    resolved = await resolve_price(symbol, _price_cache(request))
+    price = resolved[0] if resolved is not None else None
+
+    ctx = MetricContext(
+        latest=series[0], series=list(series), period_type="annual", live_price=price
+    )
+    m, _unknown = FundamentalMetrics(ctx).compute(["roic"])
+    result = run_dcf(series, price, roic=m.get("roic"))
+    return DcfResponse(symbol=symbol.upper(), **result)
