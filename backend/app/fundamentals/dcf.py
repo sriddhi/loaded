@@ -162,6 +162,80 @@ def sensitivity_grid(
     return rows
 
 
+def _b(usd: float) -> str:
+    """Human dollar magnitude."""
+    a = abs(usd)
+    if a >= 1e9:
+        return f"${usd / 1e9:.1f}B"
+    if a >= 1e6:
+        return f"${usd / 1e6:.0f}M"
+    return f"${usd:,.0f}"
+
+
+def _explain_valued(
+    *,
+    verdict: str,
+    price: float | None,
+    intrinsic: float,
+    buy_below: float,
+    base_oe: float,
+    growth: float,
+    terminal_g: float,
+    discount: float,
+    mos: float,
+    net_debt: float,
+) -> str:
+    """A plain-English, savvy-investor read of the valuation (deterministic)."""
+    parts: list[str] = []
+    # The model in one sentence.
+    g_phrase = (
+        "assuming no growth (owner earnings have been flat-to-declining over the available history)"
+        if growth == 0
+        else f"growing ~{growth * 100:.0f}%/yr for 5 years then fading to a {terminal_g * 100:.1f}% terminal rate"
+    )
+    parts.append(
+        f"Valuing {_b(base_oe)} of conservative owner earnings (operating cash flow minus capex), "
+        f"{g_phrase}, discounted at {discount * 100:.0f}%"
+        + (
+            " — including a leverage penalty for debt above equity"
+            if discount > DISCOUNT_DEFAULT
+            else ""
+        )
+        + (f", less {_b(net_debt)} of net debt" if abs(net_debt) > 1e6 else "")
+        + f" — gives an intrinsic value of about ${intrinsic:,.2f}/share."
+    )
+    # The gap and what it means.
+    if price is not None:
+        gap = (intrinsic - price) / price * 100
+        direction = "below" if gap < 0 else "above"
+        parts.append(
+            f"The market price of ${price:,.2f} is {abs(gap):.0f}% {direction} that estimate."
+        )
+    interp = {
+        "undervalued": (
+            f"At today's price it clears even the cautious buy-below line of ${buy_below:,.2f} "
+            f"(a {mos * 100:.0f}% margin of safety) — the rare case where a conservative model still "
+            "leaves room."
+        ),
+        "fair": (
+            f"It sits between the buy-below line (${buy_below:,.2f}, {mos * 100:.0f}% margin of safety) "
+            "and intrinsic value — fairly priced, with little margin of safety to protect against the "
+            "assumptions being wrong."
+        ),
+        "overvalued": (
+            "The market is paying well more than predictable cash flows justify under these "
+            f"deliberately conservative assumptions; you'd want it under ${buy_below:,.2f} "
+            f"(a {mos * 100:.0f}% margin of safety) before the math works."
+        ),
+    }
+    parts.append(interp.get(verdict, ""))
+    parts.append(
+        "This is intentionally strict — it credits only proven, predictable cash generation and "
+        "demands a discount before acting. Use it as a sanity check on price, not a target."
+    )
+    return " ".join(p for p in parts if p)
+
+
 def run_dcf(
     series: list[EquityFinancials],
     price: float | None,
@@ -175,6 +249,13 @@ def run_dcf(
             "verdict": "not_valuable",
             "gate_failures": failures,
             "price": price,
+            "explanation": (
+                "This business doesn't clear the predictability bar a DCF requires ("
+                + "; ".join(failures)
+                + "). A discounted-cash-flow value here would be precision without accuracy, so the "
+                "model declines to print a number rather than anchor you to a false one — exactly what "
+                "a disciplined investor does outside their circle of competence."
+            ),
             "disclaimer": DISCLAIMER,
         }
 
@@ -212,6 +293,18 @@ def run_dcf(
         "intrinsic_per_share": round(intrinsic, 2),
         "buy_below": round(buy_below, 2),
         "upside_pct": round((intrinsic - price) / price * 100, 1) if price else None,
+        "explanation": _explain_valued(
+            verdict=verdict,
+            price=price,
+            intrinsic=intrinsic,
+            buy_below=buy_below,
+            base_oe=base_oe,
+            growth=growth,
+            terminal_g=terminal_g,
+            discount=discount,
+            mos=mos,
+            net_debt=net_debt,
+        ),
         "assumptions": {
             "base_owner_earnings_usd": round(base_oe, 0),
             "stage1_growth": round(growth, 4),

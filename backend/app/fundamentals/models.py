@@ -154,6 +154,7 @@ class DcfResponse(BaseModel):
     intrinsic_per_share: float | None = None
     buy_below: float | None = None
     upside_pct: float | None = None
+    explanation: str = ""
     assumptions: dict[str, Any] | None = None
     sensitivity: list[dict[str, Any]] | None = None
     disclaimer: str = ""

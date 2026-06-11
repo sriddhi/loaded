@@ -209,3 +209,12 @@ def test_verdicts_and_assumptions_echoed():
     ):
         assert key in a
     assert "not financial advice" in out["disclaimer"]
+
+
+def test_explanation_present_for_valued_and_refused():
+    valued = dcf.run_dcf(_steady_series(), price=100.0)
+    assert "owner earnings" in valued["explanation"].lower()
+    assert "intrinsic value" in valued["explanation"].lower()
+    refused = dcf.run_dcf(_steady_series(n=3), price=10.0)
+    assert "predictability" in refused["explanation"].lower()
+    assert "declines to print" in refused["explanation"].lower()

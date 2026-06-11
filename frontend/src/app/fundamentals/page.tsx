@@ -109,6 +109,7 @@ type DcfResp = {
   intrinsic_per_share: number | null;
   buy_below: number | null;
   upside_pct: number | null;
+  explanation: string;
   assumptions: Record<string, number | null> | null;
   sensitivity: { growth: number; cells: { discount: number; intrinsic: number }[] }[] | null;
   disclaimer: string;
@@ -825,17 +826,27 @@ export default function FundamentalsPage(): React.JSX.Element {
                     DCF — intrinsic value
                   </SectionTitle>
 
-                  {dcf.verdict === "not_valuable" ? (
-                    <div style={{ fontSize: 13, color: color.muted, lineHeight: 1.6 }}>
-                      <div style={{ color: color.fg, marginBottom: 4 }}>
-                        Refusing to value this business — no number is better than a wrong number.
-                      </div>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        {dcf.gate_failures.map((f) => (
-                          <li key={f}>{f}</li>
-                        ))}
-                      </ul>
+                  {dcf.explanation && (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: color.fg,
+                        lineHeight: 1.65,
+                        marginBottom: space[3],
+                        paddingLeft: space[3],
+                        borderLeft: `2px solid ${DCF_VERDICT_COLOR[dcf.verdict] ?? color.border}`,
+                      }}
+                    >
+                      {dcf.explanation}
                     </div>
+                  )}
+
+                  {dcf.verdict === "not_valuable" ? (
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: color.muted }}>
+                      {dcf.gate_failures.map((f) => (
+                        <li key={f}>{f}</li>
+                      ))}
+                    </ul>
                   ) : (
                     <>
                       <div
