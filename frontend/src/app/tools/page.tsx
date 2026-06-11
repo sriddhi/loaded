@@ -51,10 +51,10 @@ type Overview = {
 };
 
 const STATE_COLOR: Record<string, string> = {
-  running: "#22c55e",
+  running: "#46a758",
   idle: "#888",
-  error: "#ef4444",
-  stopped: "#f59e0b",
+  error: "#e5484d",
+  stopped: "#d9a441",
 };
 
 function hz(h: number): string {
@@ -112,13 +112,13 @@ export default function ToolsPage(): React.JSX.Element {
     return () => clearInterval(id);
   }, [load]);
 
-  if (authLoading || !user) return <main style={{ background: "#0a0a0a", minHeight: "100vh" }} />;
+  if (authLoading || !user) return <main style={{ background: "#0e0e0e", minHeight: "100vh" }} />;
 
   return (
     <main
       style={{
-        background: "#0a0a0a",
-        color: "#f5f5f5",
+        background: "#0e0e0e",
+        color: "#ededed",
         height: "100vh",
         overflowY: "auto",
         padding: "32px 28px",
@@ -131,7 +131,7 @@ export default function ToolsPage(): React.JSX.Element {
         {data && (
           <span style={{ color: "#777", fontSize: 12, fontFamily: "var(--font-mono, monospace)" }}>
             uptime {uptime(data.uptime_seconds)} · {data.api_totals.calls} reqs ·{" "}
-            <span style={{ color: data.api_totals.errors > 0 ? "#ef4444" : "#22c55e" }}>
+            <span style={{ color: data.api_totals.errors > 0 ? "#e5484d" : "#46a758" }}>
               {(data.api_totals.error_rate * 100).toFixed(1)}% errors
             </span>
           </span>
@@ -141,7 +141,7 @@ export default function ToolsPage(): React.JSX.Element {
         Live job status, latencies and API error metrics — refreshes every 10s.
       </p>
 
-      {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: "#e5484d", fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
       {/* Jobs */}
       <h2 style={{ fontSize: 14, color: "#777", fontWeight: 600, marginBottom: 8 }}>Jobs</h2>
@@ -163,14 +163,14 @@ export default function ToolsPage(): React.JSX.Element {
               <tr key={j.name}>
                 <td style={td} title={j.last_error ?? ""}>
                   {j.name}
-                  {j.last_error && <span style={{ color: "#ef4444", marginLeft: 6 }}>⚠</span>}
+                  {j.last_error && <span style={{ color: "#e5484d", marginLeft: 6 }}>⚠</span>}
                 </td>
                 <td style={{ ...td, color: "#999" }}>{j.source}</td>
                 <td style={{ ...td, color: STATE_COLOR[j.state] ?? "#888", fontWeight: 700 }}>
                   {j.state}
                 </td>
                 <td style={{ ...td, textAlign: "right" }}>{j.runs}</td>
-                <td style={{ ...td, textAlign: "right", color: j.errors > 0 ? "#ef4444" : "#888" }}>
+                <td style={{ ...td, textAlign: "right", color: j.errors > 0 ? "#e5484d" : "#888" }}>
                   {j.errors}
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "#999" }}>{ago(j.last_run)}</td>
@@ -213,14 +213,14 @@ export default function ToolsPage(): React.JSX.Element {
                 <td style={{ ...td, fontFamily: "var(--font-mono, monospace)" }}>{a.endpoint}</td>
                 <td style={{ ...td, color: "#999" }}>{a.method}</td>
                 <td style={{ ...td, textAlign: "right" }}>{a.calls}</td>
-                <td style={{ ...td, textAlign: "right", color: a.errors > 0 ? "#ef4444" : "#888" }}>
+                <td style={{ ...td, textAlign: "right", color: a.errors > 0 ? "#e5484d" : "#888" }}>
                   {a.errors}
                 </td>
                 <td
                   style={{
                     ...td,
                     textAlign: "right",
-                    color: a.error_rate > 0 ? "#ef4444" : "#888",
+                    color: a.error_rate > 0 ? "#e5484d" : "#888",
                   }}
                 >
                   {(a.error_rate * 100).toFixed(0)}%
@@ -229,7 +229,7 @@ export default function ToolsPage(): React.JSX.Element {
                   style={{
                     ...td,
                     textAlign: "right",
-                    color: a.last_status >= 400 ? "#ef4444" : "#999",
+                    color: a.last_status >= 400 ? "#e5484d" : "#999",
                   }}
                 >
                   {a.last_status}
@@ -260,7 +260,7 @@ export default function ToolsPage(): React.JSX.Element {
           {(data?.insights.hit_rate ?? []).map((h) => (
             <span key={h.horizon_min} style={{ marginRight: 14 }}>
               {hz(h.horizon_min)}{" "}
-              <strong style={{ color: h.accuracy === null ? "#555" : "#e8ff47" }}>
+              <strong style={{ color: h.accuracy === null ? "#555" : "#e5e5e5" }}>
                 {h.accuracy === null ? "—" : `${Math.round(h.accuracy * 100)}%`}
               </strong>{" "}
               <span style={{ color: "#666" }}>

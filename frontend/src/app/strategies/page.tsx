@@ -51,7 +51,7 @@ type Run = {
 
 const MODES = ["backtest", "signal", "paper"];
 const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
-const ACCENT = "#e8ff47";
+const ACCENT = "#e5e5e5";
 
 const card: React.CSSProperties = {
   background: "#111",
@@ -88,13 +88,13 @@ function MarketDataView({ data }: { data: Record<string, unknown> }): React.JSX.
       {rows && renderTable(rows)}
       {gainers && (
         <>
-          <div style={{ color: "#22c55e", fontSize: 12, margin: "10px 0 4px" }}>Gainers</div>
+          <div style={{ color: "#46a758", fontSize: 12, margin: "10px 0 4px" }}>Gainers</div>
           {renderTable(gainers)}
         </>
       )}
       {losers && (
         <>
-          <div style={{ color: "#ef4444", fontSize: 12, margin: "10px 0 4px" }}>Losers</div>
+          <div style={{ color: "#e5484d", fontSize: 12, margin: "10px 0 4px" }}>Losers</div>
           {renderTable(losers)}
         </>
       )}
@@ -123,7 +123,7 @@ function Metric({
         style={{
           fontSize: 18,
           fontWeight: 700,
-          color: good === undefined ? "#fff" : good ? "#22c55e" : "#ef4444",
+          color: good === undefined ? "#fff" : good ? "#46a758" : "#e5484d",
         }}
       >
         {value}
@@ -142,7 +142,7 @@ function BacktestView({ data }: { data: Record<string, unknown> }): React.JSX.El
         const curve = ((r.equity_curve as number[]) ?? []).map((v, idx) => ({ i: idx, v }));
         if (r.status === "error")
           return (
-            <div key={i} style={{ color: "#ef4444", fontSize: 13, marginBottom: 10 }}>
+            <div key={i} style={{ color: "#e5484d", fontSize: 13, marginBottom: 10 }}>
               {String(r.period)}: {String(r.detail)}
             </div>
           );
@@ -325,13 +325,13 @@ export default function StrategiesPage(): React.JSX.Element {
     [loadSaved]
   );
 
-  if (authLoading || !user) return <main style={{ background: "#0a0a0a", minHeight: "100vh" }} />;
+  if (authLoading || !user) return <main style={{ background: "#0e0e0e", minHeight: "100vh" }} />;
 
   return (
     <main
       style={{
-        background: "#0a0a0a",
-        color: "#f5f5f5",
+        background: "#0e0e0e",
+        color: "#ededed",
         height: "100vh",
         display: "flex",
         flexDirection: "column",
@@ -344,7 +344,7 @@ export default function StrategiesPage(): React.JSX.Element {
         Chat to explore the market and build strategies. Save them, schedule runs, backtest, and
         (paper) trade. Paper/indicator tool — not financial advice.
       </p>
-      {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{error}</div>}
+      {error && <div style={{ color: "#e5484d", fontSize: 13, marginBottom: 8 }}>{error}</div>}
 
       <div
         style={{
@@ -399,7 +399,7 @@ export default function StrategiesPage(): React.JSX.Element {
               rows={2}
               style={{
                 flex: 1,
-                background: "#0a0a0a",
+                background: "#0e0e0e",
                 color: "#eee",
                 border: "1px solid #2a2a2a",
                 borderRadius: 6,
@@ -414,7 +414,7 @@ export default function StrategiesPage(): React.JSX.Element {
               disabled={busy}
               style={{
                 background: ACCENT,
-                color: "#0a0a0a",
+                color: "#0e0e0e",
                 border: "none",
                 borderRadius: 6,
                 padding: "0 16px",
@@ -467,7 +467,7 @@ export default function StrategiesPage(): React.JSX.Element {
                 style={{
                   fontSize: 12,
                   color: "#999",
-                  background: "#0a0a0a",
+                  background: "#0e0e0e",
                   padding: 10,
                   borderRadius: 6,
                   overflowX: "auto",
@@ -563,8 +563,8 @@ export default function StrategiesPage(): React.JSX.Element {
                         borderRadius: 4,
                         fontSize: 12,
                         cursor: "pointer",
-                        background: periods.includes(p) ? ACCENT : "#161616",
-                        color: periods.includes(p) ? "#0a0a0a" : "#999",
+                        background: periods.includes(p) ? ACCENT : "#1e1e1e",
+                        color: periods.includes(p) ? "#0e0e0e" : "#999",
                         border: "1px solid #2a2a2a",
                       }}
                     >
@@ -577,7 +577,7 @@ export default function StrategiesPage(): React.JSX.Element {
                   style={{
                     marginTop: 14,
                     background: ACCENT,
-                    color: "#0a0a0a",
+                    color: "#0e0e0e",
                     border: "none",
                     borderRadius: 6,
                     padding: "8px 18px",
@@ -623,7 +623,7 @@ export default function StrategiesPage(): React.JSX.Element {
                   borderRadius: 11,
                   border: "none",
                   cursor: "pointer",
-                  background: s.enabled ? "#22c55e" : "#333",
+                  background: s.enabled ? "#46a758" : "#333",
                   position: "relative",
                 }}
               >
@@ -665,7 +665,7 @@ export default function StrategiesPage(): React.JSX.Element {
                 <button onClick={() => void viewRuns(s)} style={btn}>
                   Runs
                 </button>
-                <button onClick={() => void removeStrategy(s)} style={{ ...btn, color: "#ef4444" }}>
+                <button onClick={() => void removeStrategy(s)} style={{ ...btn, color: "#e5484d" }}>
                   Delete
                 </button>
               </div>
@@ -697,7 +697,7 @@ export default function StrategiesPage(): React.JSX.Element {
                       <tr key={r.id} style={{ borderTop: "1px solid #1a1a1a" }}>
                         <td style={tdc}>{new Date(r.created_at).toLocaleTimeString()}</td>
                         <td style={tdc}>{r.run_type}</td>
-                        <td style={{ ...tdc, color: r.status === "ok" ? "#22c55e" : "#ef4444" }}>
+                        <td style={{ ...tdc, color: r.status === "ok" ? "#46a758" : "#e5484d" }}>
                           {r.status}
                         </td>
                         <td style={tdc}>{r.source}</td>
@@ -729,7 +729,7 @@ export default function StrategiesPage(): React.JSX.Element {
 }
 
 const sel: React.CSSProperties = {
-  background: "#0a0a0a",
+  background: "#0e0e0e",
   color: "#eee",
   border: "1px solid #2a2a2a",
   borderRadius: 4,
@@ -737,7 +737,7 @@ const sel: React.CSSProperties = {
   marginLeft: 4,
 };
 const btn: React.CSSProperties = {
-  background: "#161616",
+  background: "#1e1e1e",
   color: "#bbb",
   border: "1px solid #2a2a2a",
   borderRadius: 5,

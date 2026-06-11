@@ -94,8 +94,8 @@ export default function LoginPage(): React.JSX.Element {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0a0a0a",
-        color: "#f5f5f5",
+        background: "#0e0e0e",
+        color: "#ededed",
         padding: 24,
       }}
     >
@@ -125,8 +125,8 @@ export default function LoginPage(): React.JSX.Element {
                 gap: 10,
                 width: "100%",
                 padding: "12px 16px",
-                background: "#f5f5f5",
-                color: "#0a0a0a",
+                background: "#ededed",
+                color: "#0e0e0e",
                 borderRadius: 8,
                 fontWeight: 600,
                 fontSize: 14,
@@ -172,14 +172,14 @@ export default function LoginPage(): React.JSX.Element {
             onChange={(e) => setPassword(e.target.value)}
             style={inputStyle}
           />
-          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>{error}</div>}
+          {error && <div style={{ color: "#e5484d", fontSize: 13 }}>{error}</div>}
           <button
             type="submit"
             disabled={busy}
             style={{
               padding: "12px 16px",
-              background: "#e8ff47",
-              color: "#0a0a0a",
+              background: "#e5e5e5",
+              color: "#0e0e0e",
               border: "none",
               borderRadius: 8,
               fontWeight: 700,
@@ -203,7 +203,7 @@ export default function LoginPage(): React.JSX.Element {
             style={{
               background: "none",
               border: "none",
-              color: "#e8ff47",
+              color: "#e5e5e5",
               cursor: "pointer",
               padding: 0,
               fontSize: 13,
@@ -222,7 +222,7 @@ const inputStyle: React.CSSProperties = {
   background: "#111",
   border: "1px solid #222",
   borderRadius: 8,
-  color: "#f5f5f5",
+  color: "#ededed",
   padding: "12px 14px",
   fontSize: 14,
   outline: "none",
