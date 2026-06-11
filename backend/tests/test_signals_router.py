@@ -45,7 +45,7 @@ def _client() -> TestClient:
 def test_symbols_lists_tracked():
     resp = _client().get("/signals/symbols")
     assert resp.status_code == 200
-    assert resp.json()["symbols"] == ["SPY", "MU", "AVGO"]
+    assert resp.json()["symbols"] == ["SPY", "MU", "AVGO", "MSFT", "IBM", "INTC"]
 
 
 def test_latest_ok():

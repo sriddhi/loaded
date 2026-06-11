@@ -18,7 +18,7 @@ from app.signals.engine import HORIZONS, compute_all, oscillator
 logger = logging.getLogger(__name__)
 
 # Symbols the job tracks. SPY (the market), plus MU and AVGO.
-SYMBOLS: list[str] = ["SPY", "MU", "AVGO"]
+SYMBOLS: list[str] = ["SPY", "MU", "AVGO", "MSFT", "IBM", "INTC"]
 
 # Samples used for classification — enough context for the 1-day horizon as the
 # series builds (~a full trading day of 1-min ticks), per symbol.

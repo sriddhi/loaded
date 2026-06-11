@@ -20,10 +20,11 @@ def _client() -> TestClient:
     conn.__aexit__ = AsyncMock(return_value=False)
 
     # _signal_insights calls fetchrow once per symbol (count) then once per horizon.
+    # Route by query shape so the mock is robust to the number of tracked symbols.
     sym_row = {"n": 5, "last_ts": datetime.now(UTC), "first_ts": datetime.now(UTC)}
     hit_row = {"hits": 3, "total": 4, "pending": 1}
     conn.fetchrow = AsyncMock(
-        side_effect=[sym_row, sym_row, sym_row, hit_row, hit_row, hit_row, hit_row, hit_row]
+        side_effect=lambda query, *a: hit_row if "FILTER" in query else sym_row
     )
 
     pool = MagicMock()
@@ -40,6 +41,8 @@ def test_overview_returns_jobs_api_and_insights():
     assert "api" in body
     assert "api_totals" in body
     assert "insights" in body
-    assert len(body["insights"]["per_symbol"]) == 3
+    from app.signals.job import SYMBOLS
+
+    assert len(body["insights"]["per_symbol"]) == len(SYMBOLS)
     assert len(body["insights"]["hit_rate"]) == 5  # 1m,5m,10m,20m,1d
     assert body["insights"]["hit_rate"][0]["accuracy"] == 0.75

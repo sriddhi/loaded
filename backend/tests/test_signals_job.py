@@ -21,7 +21,7 @@ def test_signals_enabled_default_true():
 
 
 def test_tracks_spy_mu_avgo():
-    assert job.SYMBOLS == ["SPY", "MU", "AVGO"]
+    assert job.SYMBOLS == ["SPY", "MU", "AVGO", "MSFT", "IBM", "INTC"]
 
 
 @pytest.mark.asyncio

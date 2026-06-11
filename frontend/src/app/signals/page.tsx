@@ -25,7 +25,7 @@ type SpySignal = {
 };
 type History = { signals: SpySignal[] };
 
-const SYMBOLS = ["SPY", "MU", "AVGO"];
+const SYMBOLS = ["SPY", "MU", "AVGO", "MSFT", "IBM", "INTC"];
 
 const LABEL_COLOR: Record<string, string> = {
   bullish: color.up,
