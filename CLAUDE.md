@@ -248,8 +248,44 @@ docker compose build frontend && docker compose up -d frontend
 
 ## Design Principles
 
-- Near-black background (`#0a0a0a`), off-white foreground (`#f5f5f5`)
-- Accent: electric yellow (`#e8ff47`)
+**Design system: monochrome + one accent.** Tokens live in
+`frontend/src/theme/tokens.ts` (mirrored as CSS vars in `app/globals.css`);
+shared primitives in `frontend/src/components/ui/` (`PageShell`, `Card`,
+`Button`, `Badge`, `Stat`, `Tabs`, `InfoTip`, `Chart`). New UI composes these,
+not ad-hoc hex.
+
+- Monochrome surfaces: bg `#0e0e0e`, surface `#171717` / `#1e1e1e`, border `#2a2a2a`
+- Near-white primary `#e5e5e5`; a single restrained accent hue — electric blue
+  `#4f9dff` — used sparingly (links, key actions, primary chart series)
+- Muted data states: up `#46a758` · down `#e5484d` · warn `#d9a441` (not neon)
 - Monospace for all data/status text (`SF Mono`, `Fira Code`, `Cascadia Code`)
+- Charts via the shared `Chart` wrapper (`chartPalette`); pages are mobile-first
+  (`useIsMobile` + `MOBILE_BREAKPOINT`) so a future mobile build reuses the same
+  primitives. No broken/placeholder screens.
 - No unnecessary UI — every element earns its place
 - Audience: GenZ traders who value speed + simplicity, and seasoned traders who value data density
+
+## Feature surfaces (current)
+
+- **Signals** (`/signals`): per-symbol (SPY/MU/AVGO) volume-aware heuristic over
+  1m/5m/10m/20m/1d, each backtested (hit-rate + avg confidence) with an RSI 0-100
+  oversold→overbought oscillator. Indicator only — not advice.
+- **Fundamentals** (`/fundamentals`): statements + on-demand metrics (REST price
+  fallback), any-metric comparative charts, a deterministic technical summary,
+  **forward P/E** (`/forward`), and **outlook** (`/outlook`): heuristic fair value +
+  buy/sell/neutral with confidence for 1d/1w/1mo/1y/3y/5y + growth/value tags.
+- **Strategy Lab** (`/strategies`): chat (market-aware, tool-using) + dynamic
+  artifact panel; save strategies with per-strategy mode (backtest/signal/paper),
+  schedule (manual/once/interval/daily), and run history. Paper mode is
+  hard-gated to the Alpaca **paper** account.
+- **Tools** (`/tools`): live job status + API latency/error metrics.
+- **Settings** (`/settings`): per-user prefs (e.g. metric hover explainers),
+  persisted via `users.settings` + `PATCH /auth/settings`.
+
+### Strategy chat provider
+`STRATEGY_CHAT_PROVIDER=api` (Anthropic key) or `claude_code` (local Claude Code
+subscription via `scripts/claude_bridge.py` — auto-started by the launchd agent
+`com.loaded.claude-bridge`; install with `scripts/install_claude_bridge_agent.sh`).
+In `claude_code` mode the chat fetches market data through the app's own tool
+protocol (get_quote / get_daily_history / get_most_active / get_fundamentals) —
+never the host's MCP connectors.
