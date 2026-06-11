@@ -271,22 +271,35 @@ async def chat(messages: list[ChatMessage]) -> ChatResponse:
 # there are no tools, so referencing them makes the model hallucinate permission
 # prompts / external auth).
 _CC_SYSTEM = (
-    "You are Loaded's trading-strategy assistant. You design and iterate quantitative "
-    "trading strategies and explain trading concepts.\n\n"
-    "You have NO tools and NO live market data in this mode. Do not mention tools, "
-    "permissions, or connecting to data providers. If asked for a live number (a "
-    "current price, today's most-active stock, etc.), say you can't fetch live data "
-    "here and offer to help build or refine a strategy instead.\n\n"
-    "When you propose or edit a strategy, include a fenced ```json code block with an "
-    "object: name, description, type (one of MOMENTUM, BREAKOUT, MEAN_REVERSION, "
-    "CUSTOM), parameters (numeric defaults), filters, signal_logic (a single string: "
-    "exact entry, exit, and stop rules). Put a one-line summary outside the block.\n\n"
+    "You are Loaded's trading assistant. You explore markets and design/iterate "
+    "quantitative trading strategies.\n\n"
+    "MARKET DATA — you fetch it through THIS app's tools (NOT any external service, "
+    "MCP, or provider; never mention permissions or connectors). To use a tool, "
+    "reply with ONLY a fenced block and nothing else:\n"
+    "```tool\n"
+    '{"tool": "<name>", "args": { ... }}\n'
+    "```\n"
+    "The app runs it and replies with `TOOL RESULT (<name>): <json>`; then you "
+    "continue. Available tools:\n"
+    '- get_quote {"symbol":"SPY"} → latest price, day % change, day volume.\n'
+    '- get_daily_history {"symbol":"SPY","days":30} → recent daily bars '
+    "(date, close, volume, change_pct). Use this for volume/price-ratio questions.\n"
+    '- get_most_active {"by":"volume","top":10} → today\'s most-active US equities.\n'
+    '- get_fundamentals {"symbol":"AAPL"} → statements + key ratios.\n'
+    "Only emit a tool block when you actually need data; once you have it, give the "
+    "final answer. Do the arithmetic yourself from the returned numbers.\n\n"
+    "STRATEGIES — when you propose or edit one, include a fenced ```json block: "
+    "name, description, type (MOMENTUM|BREAKOUT|MEAN_REVERSION|CUSTOM), parameters "
+    "(numeric defaults), filters, signal_logic (a single string: entry, exit, stop). "
+    "Put a one-line summary outside the block.\n\n"
     "This is a paper-trading / indicator tool — never give personalized financial "
     "advice. Be concise."
 )
 
 # Capture a fenced JSON block (greedy inner to allow nested braces in the config).
 _FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
+_TOOL_FENCE = re.compile(r"```tool\s*(\{.*?\})\s*```", re.DOTALL)
+_CC_MAX_TOOL_TURNS = 5
 
 
 def _flatten(messages: list[ChatMessage]) -> str:
@@ -350,11 +363,101 @@ async def _bridge_chat(system: str, prompt: str) -> str:
     return str(resp.json().get("text", ""))
 
 
+# ── claude_code market-data tools (app-owned; yfinance + reuse) ───────────────
+
+
+def _cc_quote_sync(symbol: str) -> dict[str, Any]:
+    import yfinance as yf
+
+    hist = yf.Ticker(symbol).history(period="2d", interval="1d")
+    if hist is None or hist.empty:
+        return {"error": f"no data for {symbol}"}
+    last = hist.iloc[-1]
+    prev_close = float(hist.iloc[-2]["Close"]) if len(hist) > 1 else float(last["Open"])
+    close = float(last["Close"])
+    change_pct = ((close - prev_close) / prev_close * 100) if prev_close else 0.0
+    return {
+        "symbol": symbol.upper(),
+        "price": round(close, 2),
+        "day_change_pct": round(change_pct, 3),
+        "day_volume": int(last["Volume"] or 0),
+    }
+
+
+def _cc_history_sync(symbol: str, days: int) -> dict[str, Any]:
+    import yfinance as yf
+
+    days = max(2, min(int(days), 400))
+    hist = yf.Ticker(symbol).history(period=f"{days + 5}d", interval="1d")
+    if hist is None or hist.empty:
+        return {"error": f"no data for {symbol}"}
+    hist = hist.tail(days)
+    closes = hist["Close"].astype(float)
+    pct = closes.pct_change().fillna(0.0) * 100
+    rows = [
+        {
+            "date": idx.strftime("%Y-%m-%d"),
+            "close": round(float(c), 2),
+            "volume": int(v or 0),
+            "change_pct": round(float(p), 3),
+        }
+        for idx, c, v, p in zip(hist.index, closes, hist["Volume"], pct, strict=False)
+    ]
+    return {"symbol": symbol.upper(), "days": len(rows), "bars": rows}
+
+
+async def _cc_run_tool(name: str, args: dict[str, Any]) -> tuple[str, Artifact | None]:
+    try:
+        if name == "get_quote":
+            data = await asyncio.to_thread(_cc_quote_sync, args["symbol"])
+            return json.dumps(data), Artifact(
+                type="market_data",
+                data={"title": f"{args['symbol'].upper()} quote", "rows": [data]},
+            )
+        if name == "get_daily_history":
+            data = await asyncio.to_thread(_cc_history_sync, args["symbol"], args.get("days", 30))
+            return json.dumps(data), Artifact(
+                type="market_data",
+                data={
+                    "title": f"{args['symbol'].upper()} · {data.get('days', 0)}d history",
+                    "rows": data.get("bars", [])[-12:],
+                },
+            )
+        if name == "get_most_active":
+            return await _tool_most_active(args.get("by", "volume"), args.get("top", 10))
+        if name == "get_fundamentals":
+            return await _tool_fundamentals(args["symbol"])
+        return json.dumps({"error": f"unknown tool {name}"}), None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[chat:cc] tool %s failed: %s", name, exc)
+        return json.dumps({"error": str(exc)}), None
+
+
 async def _chat_claude_code(messages: list[ChatMessage]) -> ChatResponse:
-    text = await _bridge_chat(_CC_SYSTEM, _flatten(messages))
+    prompt = _flatten(messages)
+    artifact: Artifact | None = None
+    text = ""
+    for _ in range(_CC_MAX_TOOL_TURNS):
+        text = await _bridge_chat(_CC_SYSTEM, prompt)
+        tool_match = _TOOL_FENCE.search(text)
+        if not tool_match:
+            break
+        try:
+            call = json.loads(tool_match.group(1), strict=False)
+            result, art = await _cc_run_tool(call.get("tool", ""), call.get("args", {}) or {})
+        except Exception as exc:  # noqa: BLE001
+            result, art = json.dumps({"error": str(exc)}), None
+        if art is not None:
+            artifact = art
+        # Feed the tool result back and let the model continue.
+        prompt += f"\n\n{text}\n\nTOOL RESULT ({call.get('tool', '')}): {result}\n\nAssistant:"
+
     strategy = _extract_strategy(text)
-    reply = _FENCE.sub("", text).strip() if strategy else text.strip()
-    artifact = strategy or Artifact(type="text", data=reply)
+    if strategy is not None:
+        artifact = strategy
+    reply = _FENCE.sub("", text).strip()
+    if artifact is None:
+        artifact = Artifact(type="text", data=reply)
     out = list(messages) + [ChatMessage(role="assistant", content=reply)]
     return ChatResponse(reply=reply, messages=out, artifact=artifact)
 

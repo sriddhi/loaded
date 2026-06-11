@@ -41,6 +41,11 @@ CLAUDE_BIN = shutil.which("claude") or os.path.expanduser("~/.claude/local/claud
 
 def _run_claude(system: str, prompt: str, model: str | None) -> str:
     cmd = [CLAUDE_BIN, "-p", prompt, "--output-format", "json"]
+    # Strip ALL MCP servers (the host's FMP/etc.) and disallow built-in tools, so
+    # this behaves as a pure text completion — the app drives data via its own
+    # tool protocol, not the host's Claude Code tools.
+    cmd += ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+    cmd += ["--disallowed-tools", "Bash", "Read", "Edit", "Write", "WebFetch", "WebSearch"]
     if system:
         cmd += ["--append-system-prompt", system]
     if model:

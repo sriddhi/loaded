@@ -113,6 +113,37 @@ async def test_claude_code_provider_extracts_strategy_from_bridge():
 
 
 @pytest.mark.asyncio
+async def test_claude_code_tool_loop_fetches_market_data():
+    # First bridge reply requests a tool; second is the final answer using the data.
+    replies = iter(
+        [
+            '```tool\n{"tool":"get_quote","args":{"symbol":"SPY"}}\n```',
+            "SPY is at $731.20, up 0.2% on the day.",
+        ]
+    )
+
+    async def fake_bridge(_system, _prompt):
+        return next(replies)
+
+    with (
+        patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
+        patch("app.strategies.chat._bridge_chat", side_effect=fake_bridge),
+        patch(
+            "app.strategies.chat._cc_quote_sync",
+            return_value={
+                "symbol": "SPY",
+                "price": 731.2,
+                "day_change_pct": 0.2,
+                "day_volume": 1000,
+            },
+        ),
+    ):
+        out = await chatmod.chat([ChatMessage(role="user", content="price of SPY?")])
+    assert out.artifact.type == "market_data"
+    assert "731" in out.reply  # used the fetched number
+
+
+@pytest.mark.asyncio
 async def test_claude_code_provider_plain_text_answer():
     with (
         patch.dict(os.environ, {"STRATEGY_CHAT_PROVIDER": "claude_code"}, clear=False),
