@@ -76,3 +76,13 @@ body {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+input:focus {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+button:active {
+  transform: scale(0.98);
+}
