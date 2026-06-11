@@ -1,22 +1,26 @@
 """
-SPY 0-3 DTE options paper-trading job (time-boxed experiment).
+SPY 0-3 DTE options paper-trading job — multi-strategy, time-boxed experiment.
 
-Every minute, derive a short-term SPY direction from 1-minute momentum and, while
-the market is open, BUY one near-ATM 0-3 DTE option (CALL on up, PUT on down) on
-the Alpaca PAPER account. Each position is held briefly, then closed; realized
-P&L decides whether the decision was "right" or "wrong". A running report
-(right vs wrong + total upside) is written to a JSON file.
+Every minute it pulls recent SPY 1-minute bars and evaluates EACH strategy:
+  - `momentum`        : ~5-min price momentum (up → call, down → put).
+  - `bbands_macd_vol` : Bollinger-band mean reversion confirmed by MACD histogram
+                        and above-average volume.
+For every strategy that fires, while the market is open, it BUYS one near-ATM
+0-3 DTE option (call/put) on the Alpaca PAPER account, holds briefly, closes, and
+scores the decision right/wrong by realized P&L. A live JSON report documents
+every trade with its strategy tag plus per-strategy and combined tallies.
+
+Both strategies trade identically — 1 contract per decision (same sizing) — so the
+report is an apples-to-apples comparison.
 
 SAFETY — hard guarantees:
-- PAPER ONLY: every client is `TradingClient(paper=True)`; the job aborts unless
-  paper credentials are configured. It never touches a real-money account.
-- LONG OPTIONS ONLY (buy calls/puts) → max loss is the premium paid; no selling
-  /writing, no naked risk.
-- Time-boxed: stops at OPT_END_PT (default 13:15 America/Los_Angeles) and only
-  trades while the market clock is open. 1 contract/trade, capped concurrency.
+- PAPER ONLY: every client is `TradingClient(paper=True)`; aborts without paper
+  credentials. Never touches a real-money account.
+- LONG OPTIONS ONLY (buy calls/puts) → max loss is the premium; no writing/naked.
+- Time-boxed: stops at OPT_END_PT (default 13:15 America/Los_Angeles); trades only
+  while the market clock is open. 1 contract/trade, capped concurrency per strategy.
 
-Run (inside the backend container, detached):
-    python -m app.options_paper_job
+Run (host or backend container): python -m app.options_paper_job
 Report: $OPTIONS_REPORT_PATH (default /app/options_report.json).
 """
 
@@ -25,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import statistics
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -38,10 +43,95 @@ ET = ZoneInfo("America/New_York")
 
 REPORT_PATH = os.getenv("OPTIONS_REPORT_PATH", "/app/options_report.json")
 HOLD_MIN = int(os.getenv("OPT_HOLD_MIN", "5"))
-MAX_OPEN = int(os.getenv("OPT_MAX_OPEN", "5"))
-MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.0006"))  # 5-min return to act
-END_PT = os.getenv("OPT_END_PT", "13:15")  # America/Los_Angeles HH:MM
+MAX_OPEN = int(os.getenv("OPT_MAX_OPEN", "5"))  # per strategy
+MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.0002"))
+END_PT = os.getenv("OPT_END_PT", "13:15")
 QTY = 1
+
+
+# ── Indicators (pure) ─────────────────────────────────────────────────────────
+
+
+def _ema_series(values: list[float], span: int) -> list[float]:
+    k = 2.0 / (span + 1)
+    out = [values[0]]
+    for v in values[1:]:
+        out.append(v * k + out[-1] * (1 - k))
+    return out
+
+
+def macd(closes: list[float]) -> tuple[float, float, float] | None:
+    """(macd_line, signal_line, histogram) for MACD(12,26,9); None if too short."""
+    if len(closes) < 26:
+        return None
+    ema12 = _ema_series(closes, 12)
+    ema26 = _ema_series(closes, 26)
+    macd_line = [a - b for a, b in zip(ema12, ema26, strict=False)]
+    signal = _ema_series(macd_line, 9)
+    return macd_line[-1], signal[-1], macd_line[-1] - signal[-1]
+
+
+def bollinger(
+    closes: list[float], period: int = 20, mult: float = 2.0
+) -> tuple[float, float] | None:
+    """(%position in [-1,1], bandwidth) — position −1 at lower band, +1 at upper."""
+    if len(closes) < period:
+        return None
+    window = closes[-period:]
+    sma = sum(window) / period
+    sd = statistics.pstdev(window)
+    if sd == 0:
+        return 0.0, 0.0
+    pos = (closes[-1] - sma) / (mult * sd)
+    return max(-2.0, min(2.0, pos)), (mult * sd) / sma
+
+
+# ── Strategies: bars → ('CALL'|'PUT'|'SKIP', price) ───────────────────────────
+
+
+def sig_momentum(bars: list[Any]) -> tuple[str, float]:
+    closes = [float(b.close) for b in bars]
+    if len(closes) < 6:
+        return "SKIP", (closes[-1] if closes else 0.0)
+    price, ref = closes[-1], closes[-6]
+    ret = (price - ref) / ref if ref else 0.0
+    if ret >= MOM_THRESHOLD:
+        return "CALL", price
+    if ret <= -MOM_THRESHOLD:
+        return "PUT", price
+    return "SKIP", price
+
+
+def sig_bbands_macd_vol(bars: list[Any]) -> tuple[str, float]:
+    closes = [float(b.close) for b in bars]
+    vols = [float(getattr(b, "volume", 0) or 0) for b in bars]
+    if len(closes) < 30:
+        return "SKIP", (closes[-1] if closes else 0.0)
+    bb = bollinger(closes)
+    mc = macd(closes)
+    if bb is None or mc is None:
+        return "SKIP", closes[-1]
+    pos, _bw = bb
+    _macd_line, _signal, hist = mc
+    avg_vol = statistics.fmean(vols[-20:]) if len(vols) >= 20 else 0.0
+    recent_vol = statistics.fmean(vols[-3:])
+    vol_ratio = (recent_vol / avg_vol) if avg_vol else 0.0
+    price = closes[-1]
+    # Mean-reversion at the bands, confirmed by MACD turning + volume participation.
+    if pos <= -0.8 and hist > 0 and vol_ratio >= 1.0:
+        return "CALL", price
+    if pos >= 0.8 and hist < 0 and vol_ratio >= 1.0:
+        return "PUT", price
+    return "SKIP", price
+
+
+STRATEGIES: list[dict[str, Any]] = [
+    {"name": "momentum", "signal": sig_momentum},
+    {"name": "bbands_macd_vol", "signal": sig_bbands_macd_vol},
+]
+
+
+# ── Alpaca plumbing ───────────────────────────────────────────────────────────
 
 
 def _clients() -> tuple[Any, Any]:
@@ -55,27 +145,15 @@ def _clients() -> tuple[Any, Any]:
     return TradingClient(key, sec, paper=True), StockHistoricalDataClient(key, sec)
 
 
-def spy_direction(stock_client: Any) -> tuple[str, float]:
-    """('CALL'|'PUT'|'SKIP', spy_price) from ~5-minute SPY momentum."""
+def _fetch_bars(stock_client: Any, limit: int = 60) -> list[Any]:
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
 
-    req = StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Minute, limit=15)
-    data = stock_client.get_stock_bars(req).data.get("SPY", [])
-    closes = [float(b.close) for b in data]
-    if len(closes) < 6:
-        return "SKIP", (closes[-1] if closes else 0.0)
-    price, ref = closes[-1], closes[-6]
-    ret = (price - ref) / ref if ref else 0.0
-    if ret >= MOM_THRESHOLD:
-        return "CALL", price
-    if ret <= -MOM_THRESHOLD:
-        return "PUT", price
-    return "SKIP", price
+    req = StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Minute, limit=limit)
+    return list(stock_client.get_stock_bars(req).data.get("SPY", []))
 
 
 def pick_contract(tc: Any, side: str, price: float) -> Any | None:
-    """Nearest-ATM 0-3 DTE contract of the requested type (prefer nearest expiry)."""
     from alpaca.trading.enums import AssetStatus, ContractType
     from alpaca.trading.requests import GetOptionContractsRequest
 
@@ -123,46 +201,65 @@ def _filled_price(tc: Any, order_id: Any, timeout: int = 20) -> float | None:
     return None
 
 
+# ── Reporting ─────────────────────────────────────────────────────────────────
+
+
+def _tally(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    right = sum(1 for t in trades if t["right"])
+    total = round(sum(t["pnl"] for t in trades), 2)
+    return {
+        "decisions": len(trades),
+        "right": right,
+        "wrong": len(trades) - right,
+        "win_rate_pct": round(right / len(trades) * 100, 1) if trades else None,
+        "total_upside_usd": total,
+        "avg_per_trade_usd": round(total / len(trades), 2) if trades else None,
+    }
+
+
 def _write_report(
     closed: list[dict[str, Any]], open_trades: list[dict[str, Any]], start: datetime
 ) -> None:
-    right = sum(1 for t in closed if t["right"])
-    wrong = len(closed) - right
-    total_upside = round(sum(t["pnl"] for t in closed), 2)
+    by_strategy: dict[str, list[dict[str, Any]]] = {}
+    for t in closed:
+        by_strategy.setdefault(t.get("strategy", "?"), []).append(t)
     report = {
-        "title": "SPY 0-3 DTE options — paper decision report",
-        "account": "ALPACA PAPER (long options only)",
+        "title": "SPY 0-3 DTE options — multi-strategy paper decision report",
+        "account": "ALPACA PAPER (long options only, 1 contract/decision)",
         "started_pt": start.astimezone(PT).strftime("%Y-%m-%d %H:%M %Z"),
         "ends_pt": END_PT + " PT",
         "updated": datetime.now(UTC).isoformat(),
-        "decisions": len(closed),
-        "right": right,
-        "wrong": wrong,
-        "win_rate_pct": round(right / len(closed) * 100, 1) if closed else None,
-        "total_upside_usd": total_upside,
-        "avg_per_trade_usd": round(total_upside / len(closed), 2) if closed else None,
-        "open_now": len(open_trades),
-        "trades": closed[-50:],
+        "by_strategy": {s: _tally(ts) for s, ts in by_strategy.items()},
+        "combined": _tally(closed),
+        "open_now": {
+            s: sum(1 for t in open_trades if t.get("strategy") == s)
+            for s in {t.get("strategy") for t in open_trades}
+        },
+        "trades": closed[-100:],
     }
     with open(REPORT_PATH, "w") as f:
         json.dump(report, f, indent=2, default=str)
+
+
+# ── Main loop ─────────────────────────────────────────────────────────────────
 
 
 def main() -> None:
     tc, sd = _clients()
     acct = tc.get_account()
     log.info(
-        "PAPER account %s · options level %s · buying power %s",
+        "PAPER account %s · options level %s · buying power %s · strategies: %s",
         getattr(acct, "status", "?"),
         getattr(acct, "options_trading_level", "?"),
         getattr(acct, "buying_power", "?"),
+        ", ".join(s["name"] for s in STRATEGIES),
     )
 
     now_pt = datetime.now(PT)
     hh, mm = (int(x) for x in END_PT.split(":"))
     end_pt = now_pt.replace(hour=hh, minute=mm, second=0, microsecond=0)
     if end_pt <= now_pt:
-        end_pt = end_pt + timedelta(days=1)
+        end_pt += timedelta(days=1)
     log.info("Running every 60s until %s", end_pt.strftime("%Y-%m-%d %H:%M %Z"))
 
     open_trades: list[dict[str, Any]] = []
@@ -182,39 +279,48 @@ def main() -> None:
     while datetime.now(PT) < end_pt:
         try:
             now = datetime.now(UTC)
-            # 1) Close held positions whose window elapsed.
+            # 1) close due positions
             for t in [x for x in open_trades if now >= x["exit_at"]]:
                 close_trade(t)
                 open_trades.remove(t)
-            # 2) New decision (only while market open + under the concurrency cap).
+            # 2) per-strategy decisions while market open
             clk = tc.get_clock()
-            if clk.is_open and len(open_trades) < MAX_OPEN:
-                side, price = spy_direction(sd)
-                if side in ("CALL", "PUT") and price > 0:
+            if clk.is_open:
+                bars = _fetch_bars(sd)
+                for strat in STRATEGIES:
+                    name = strat["name"]
+                    held = sum(1 for t in open_trades if t["strategy"] == name)
+                    if held >= MAX_OPEN:
+                        continue
+                    side, price = strat["signal"](bars)
+                    if side not in ("CALL", "PUT") or price <= 0:
+                        continue
                     c = pick_contract(tc, side, price)
-                    if c is not None:
-                        o = _order(tc, c.symbol, buy=True)
-                        entry = _filled_price(tc, o.id)
-                        if entry is not None:
-                            open_trades.append(
-                                {
-                                    "contract": c.symbol,
-                                    "side": side,
-                                    "strike": float(c.strike_price),
-                                    "expiry": str(c.expiration_date),
-                                    "spy": round(price, 2),
-                                    "entry": entry,
-                                    "opened_at": now.isoformat(),
-                                    "exit_at": now + timedelta(minutes=HOLD_MIN),
-                                }
-                            )
-                            log.info("BUY %s %s @ %.2f (SPY %.2f)", side, c.symbol, entry, price)
+                    if c is None:
+                        continue
+                    o = _order(tc, c.symbol, buy=True)
+                    entry = _filled_price(tc, o.id)
+                    if entry is None:
+                        continue
+                    open_trades.append(
+                        {
+                            "strategy": name,
+                            "contract": c.symbol,
+                            "side": side,
+                            "strike": float(c.strike_price),
+                            "expiry": str(c.expiration_date),
+                            "spy": round(price, 2),
+                            "entry": entry,
+                            "opened_at": now.isoformat(),
+                            "exit_at": now + timedelta(minutes=HOLD_MIN),
+                        }
+                    )
+                    log.info("[%s] BUY %s %s @ %.2f (SPY %.2f)", name, side, c.symbol, entry, price)
             _write_report(closed, open_trades, now_pt)
         except Exception as exc:  # noqa: BLE001
             log.warning("tick error: %s", exc)
         time.sleep(60)
 
-    # End of window: try to close whatever is still open.
     for t in list(open_trades):
         close_trade(t)
         open_trades.remove(t)
