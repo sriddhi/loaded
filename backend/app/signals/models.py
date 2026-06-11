@@ -21,6 +21,7 @@ class SpySignal(BaseModel):
     symbol: str = "SPY"
     price: float
     volume: int = 0
+    osc: float | None = None  # RSI 0-100 (oversold → overbought); None until enough data
     signals: list[HorizonSignal]
 
 

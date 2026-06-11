@@ -13,7 +13,7 @@ from typing import Any
 
 import asyncpg
 from app.ops.metrics import track_job
-from app.signals.engine import HORIZONS, compute_all
+from app.signals.engine import HORIZONS, compute_all, oscillator
 
 logger = logging.getLogger(__name__)
 
@@ -97,20 +97,22 @@ async def tick_once(pool: asyncpg.Pool, symbol: str) -> dict[str, Any] | None:
         prices.append(price)
         volumes.append(float(volume))
         r = compute_all(prices, volumes)
+        osc = oscillator(prices)
         ts = await conn.fetchval(
             """
             INSERT INTO spy_signals
-                (symbol, price, volume,
+                (symbol, price, volume, osc,
                  sig_1m, conf_1m, reason_1m,
                  sig_5m, conf_5m, reason_5m, sig_10m, conf_10m, reason_10m,
                  sig_20m, conf_20m, reason_20m, sig_1d, conf_1d, reason_1d)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                    $14, $15, $16, $17, $18, $19)
             RETURNING ts
             """,
             symbol,
             price,
             volume,
+            osc,
             r[1][0],
             r[1][1],
             r[1][2],
@@ -132,6 +134,7 @@ async def tick_once(pool: asyncpg.Pool, symbol: str) -> dict[str, Any] | None:
         "symbol": symbol,
         "price": price,
         "volume": volume,
+        "osc": osc,
         "signals": _results_to_signals(r),
     }
 
@@ -174,11 +177,13 @@ def _row_to_signal(row: asyncpg.Record) -> dict[str, Any]:
             "outcome": outcome,
         }
 
+    osc_val = row["osc"] if _has_col(row, "osc") and row["osc"] is not None else None
     return {
         "ts": row["ts"],
         "symbol": row["symbol"],
         "price": float(row["price"]),
         "volume": int(row["volume"] or 0),
+        "osc": float(osc_val) if osc_val is not None else None,
         "signals": [
             sig(1, "sig_1m", "conf_1m", "reason_1m", "res_1m"),
             sig(5, "sig_5m", "conf_5m", "reason_5m", "res_5m"),

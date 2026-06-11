@@ -20,6 +20,7 @@ type SpySignal = {
   symbol: string;
   price: number;
   volume: number;
+  osc: number | null;
   signals: HorizonSignal[];
 };
 type History = { signals: SpySignal[] };
@@ -87,6 +88,69 @@ function accuracy(history: SpySignal[]): Record<number, Acc> {
     }
   }
   return acc;
+}
+
+function Oscillator({ osc }: { osc: number | null }): React.JSX.Element {
+  const zone = osc === null ? "—" : osc <= 30 ? "Oversold" : osc >= 70 ? "Overbought" : "Neutral";
+  const zoneColor =
+    osc === null ? color.muted : osc <= 30 ? color.up : osc >= 70 ? color.down : color.muted;
+  return (
+    <Card pad={space[3]} style={{ marginBottom: space[3] }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ color: color.muted, fontSize: 11 }}>
+          Oscillator (RSI · oversold → overbought)
+        </span>
+        <span style={{ fontFamily: font.mono, fontSize: 13 }}>
+          {osc === null ? "building…" : osc.toFixed(0)}{" "}
+          <span style={{ color: zoneColor, fontWeight: 700 }}>{zone}</span>
+        </span>
+      </div>
+      <div
+        style={{
+          position: "relative",
+          height: 8,
+          borderRadius: 4,
+          background: `linear-gradient(90deg, ${color.up} 0%, ${color.up} 30%, ${color.surface2} 45%, ${color.surface2} 55%, ${color.down} 70%, ${color.down} 100%)`,
+          opacity: osc === null ? 0.3 : 1,
+        }}
+      >
+        {osc !== null && (
+          <div
+            style={{
+              position: "absolute",
+              left: `calc(${Math.max(0, Math.min(100, osc))}% - 5px)`,
+              top: -3,
+              width: 10,
+              height: 14,
+              borderRadius: 3,
+              background: color.fg,
+              border: `1px solid ${color.bg}`,
+            }}
+          />
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          color: color.faint,
+          fontSize: 9,
+          marginTop: 3,
+        }}
+      >
+        <span>0 · oversold</span>
+        <span>50</span>
+        <span>overbought · 100</span>
+      </div>
+    </Card>
+  );
 }
 
 function SignalBadge({ s }: { s: HorizonSignal }): React.JSX.Element {
@@ -179,6 +243,8 @@ export default function SignalsPage(): React.JSX.Element {
           <Sparkline data={priceSeries} dataKey="v" height={110} />
         </Card>
       )}
+
+      {latest && <Oscillator osc={latest.osc} />}
 
       {latest ? (
         <>

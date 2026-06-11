@@ -37,6 +37,7 @@ def _to_model(d: dict[str, Any]) -> SpySignal:
         symbol=d.get("symbol", "SPY"),
         price=d["price"],
         volume=int(d.get("volume", 0) or 0),
+        osc=d.get("osc"),
         signals=[HorizonSignal(**s) for s in d["signals"]],
     )
 

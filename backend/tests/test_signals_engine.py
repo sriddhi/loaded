@@ -100,6 +100,25 @@ def test_heavy_volume_boosts_confidence_over_light():
     assert conf_heavy > conf_light
 
 
+def test_oscillator_overbought_oversold_and_insufficient():
+    from app.signals.engine import oscillator
+
+    # Steadily rising → overbought (high RSI).
+    up = [100 + i for i in range(20)]
+    osc_up = oscillator(up)
+    assert osc_up is not None and osc_up > 70
+
+    # Steadily falling → oversold (low RSI).
+    down = [100 - i for i in range(20)]
+    osc_down = oscillator(down)
+    assert osc_down is not None and osc_down < 30
+
+    # Too little data → None (gauge stays blank, not misleading).
+    assert oscillator([100, 101, 102]) is None
+    # Always within 0–100.
+    assert 0.0 <= oscillator([100 + (i % 2) for i in range(30)]) <= 100.0  # type: ignore[operator]
+
+
 def test_compute_all_covers_all_horizons_with_reasons():
     prices = [100 + i * 0.1 for i in range(30)]
     out = compute_all(prices, _flat_vol(30))

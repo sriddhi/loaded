@@ -198,3 +198,29 @@ def compute_all(
     prices: list[float], volumes: list[float] | None = None
 ) -> dict[int, tuple[str, float, str]]:
     return {h: classify(prices, volumes, h) for h in HORIZONS}
+
+
+_RSI_PERIOD = 14
+
+
+def oscillator(prices: list[float], period: int = _RSI_PERIOD) -> float | None:
+    """RSI(14) on a 0–100 scale (oversold → overbought). None if too little data.
+
+    Wilder's RSI: <30 oversold, >70 overbought, ~50 neutral. Returns None until at
+    least `period + 1` samples exist so the gauge doesn't show a misleading value.
+    """
+    if len(prices) < period + 1:
+        return None
+    deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    # Seed with the simple average of the first `period`, then Wilder-smooth.
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(deltas)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+    rs = avg_gain / avg_loss
+    return round(100.0 - 100.0 / (1.0 + rs), 2)
