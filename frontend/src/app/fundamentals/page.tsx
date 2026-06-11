@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
+import { BarChartView } from "../../components/ui/Chart";
+import { color } from "../../theme/tokens";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Tracked = {
@@ -375,6 +377,31 @@ export default function FundamentalsPage(): React.JSX.Element {
                   </button>
                 ))}
               </div>
+
+              {/* Revenue + net income trend chart (oldest → newest, in $B) */}
+              {(() => {
+                const data = [...(stmts?.statements ?? [])].reverse().map((s) => ({
+                  x: String(s.fiscal_year ?? s.period_end.slice(0, 4)),
+                  Revenue: s.revenue !== null ? s.revenue / 100 / 1e9 : 0,
+                  "Net income": s.net_income !== null ? s.net_income / 100 / 1e9 : 0,
+                }));
+                return data.length > 1 ? (
+                  <div style={{ ...card, padding: 14, marginBottom: 12 }}>
+                    <div style={{ color: color.muted, fontSize: 11, marginBottom: 6 }}>
+                      Revenue &amp; net income ($B)
+                    </div>
+                    <BarChartView
+                      data={data}
+                      xKey="x"
+                      height={200}
+                      series={[
+                        { key: "Revenue", color: color.hue },
+                        { key: "Net income", color: color.fg },
+                      ]}
+                    />
+                  </div>
+                ) : null;
+              })()}
 
               {/* Statements table */}
               <div style={{ ...card, overflowX: "auto", padding: 0 }}>

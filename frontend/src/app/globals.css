@@ -7,14 +7,48 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --fg: #f5f5f5;
-  --muted: #555;
-  --accent: #e8ff47; /* electric yellow — sharp, GenZ, data-precise */
-  --online: #22c55e;
-  --offline: #ef4444;
-  --checking: #f59e0b;
+  /* ── Monochrome + 1 accent design tokens ─────────────────────────────────── */
+  /* Surfaces */
+  --bg: #0e0e0e;
+  --surface: #171717;
+  --surface-2: #1e1e1e;
+  --border: #2a2a2a;
+  --border-strong: #383838;
+
+  /* Text */
+  --fg: #ededed;
+  --muted: #8a8a8a;
+  --faint: #5c5c5c;
+
+  /* Accent: near-white primary + a single restrained hue */
+  --accent: #e5e5e5;
+  --hue: #4f9dff; /* electric blue, used sparingly */
+  --hue-dim: #2f6dbf;
+
+  /* Data states (muted, not neon) */
+  --up: #46a758;
+  --down: #e5484d;
+  --warn: #d9a441;
+  --info: #4f9dff;
+
+  /* Back-compat aliases (older code referenced these) */
+  --online: var(--up);
+  --offline: var(--down);
+  --checking: var(--warn);
+
+  /* Radii + spacing scale */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
   --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 }
 
 html,
@@ -22,7 +56,23 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+/* Consistent, subtle scrollbars on the scroll containers. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

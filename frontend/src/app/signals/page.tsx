@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
+import { Card, PageShell, SectionTitle, Tabs } from "../../components/ui";
+import { Sparkline } from "../../components/ui/Chart";
+import { color, font, space } from "../../theme/tokens";
 
 type HorizonSignal = {
   horizon_min: number;
@@ -24,13 +27,12 @@ type History = { signals: SpySignal[] };
 const SYMBOLS = ["SPY", "MU", "AVGO"];
 
 const LABEL_COLOR: Record<string, string> = {
-  bullish: "#22c55e",
-  bearish: "#ef4444",
-  bull_trap: "#f59e0b",
-  bear_trap: "#47d4ff",
-  neutral: "#777",
+  bullish: color.up,
+  bearish: color.down,
+  bull_trap: color.warn,
+  bear_trap: color.hue,
+  neutral: color.muted,
 };
-
 const LABEL_TEXT: Record<string, string> = {
   bullish: "Bullish",
   bearish: "Bearish",
@@ -40,18 +42,9 @@ const LABEL_TEXT: Record<string, string> = {
 };
 
 const HZ = [1, 5, 10, 20, 1440];
-
-function hzLabel(h: number): string {
-  return h >= 1440 ? "1 day" : `${h} min`;
-}
-
-function hzShort(h: number): string {
-  return h >= 1440 ? "1d" : `${h}m`;
-}
-
-function color(label: string): string {
-  return LABEL_COLOR[label] ?? "#777";
-}
+const hzLabel = (h: number): string => (h >= 1440 ? "1 day" : `${h} min`);
+const hzShort = (h: number): string => (h >= 1440 ? "1d" : `${h}m`);
+const labelColor = (label: string): string => LABEL_COLOR[label] ?? color.muted;
 
 function fmtVolume(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
@@ -62,26 +55,23 @@ function fmtVolume(v: number): string {
 function OutcomeMark({ outcome }: { outcome: HorizonSignal["outcome"] }): React.JSX.Element {
   if (outcome === "correct")
     return (
-      <span style={{ color: "#22c55e", marginLeft: 5 }} title="Backtest: thesis held">
+      <span style={{ color: color.up, marginLeft: 5 }} title="Backtest: thesis held">
         ✓
       </span>
     );
   if (outcome === "wrong")
     return (
-      <span style={{ color: "#ef4444", marginLeft: 5 }} title="Backtest: thesis missed">
+      <span style={{ color: color.down, marginLeft: 5 }} title="Backtest: thesis missed">
         ✗
       </span>
     );
   return (
-    <span style={{ color: "#444", marginLeft: 5 }} title="Backtest: horizon not elapsed yet">
+    <span style={{ color: color.faint, marginLeft: 5 }} title="Backtest: horizon not elapsed yet">
       ·
     </span>
   );
 }
 
-// Hit-rate + mean confidence per horizon across the loaded history.
-// hits/total are over resolved rows; confSum/confN are over ALL rows (every row
-// carries a confidence, resolved or not).
 type Acc = { hits: number; total: number; confSum: number; confN: number };
 function accuracy(history: SpySignal[]): Record<number, Acc> {
   const acc: Record<number, Acc> = {};
@@ -99,30 +89,23 @@ function accuracy(history: SpySignal[]): Record<number, Acc> {
   return acc;
 }
 
-function Badge({ s }: { s: HorizonSignal }): React.JSX.Element {
-  const c = color(s.label);
+function SignalBadge({ s }: { s: HorizonSignal }): React.JSX.Element {
+  const c = labelColor(s.label);
   return (
-    <div
-      style={{
-        background: "#111",
-        border: `1px solid ${c}`,
-        borderRadius: 10,
-        padding: "16px 18px",
-      }}
-    >
-      <div style={{ color: "#777", fontSize: 12 }}>next {hzLabel(s.horizon_min)}</div>
+    <Card hue={c} pad={space[4]}>
+      <div style={{ color: color.muted, fontSize: 12 }}>next {hzLabel(s.horizon_min)}</div>
       <div style={{ color: c, fontSize: 22, fontWeight: 800, marginTop: 6 }}>
         {LABEL_TEXT[s.label] ?? s.label}
       </div>
-      <div style={{ color: "#555", fontSize: 11, marginTop: 4 }}>
+      <div style={{ color: color.faint, fontSize: 11, marginTop: 4 }}>
         confidence {(s.confidence * 100).toFixed(0)}%
       </div>
       {s.reason && (
-        <div style={{ color: "#999", fontSize: 11, marginTop: 10, lineHeight: 1.4 }}>
+        <div style={{ color: color.muted, fontSize: 11, marginTop: 10, lineHeight: 1.4 }}>
           {s.reason}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -142,7 +125,7 @@ export default function SignalsPage(): React.JSX.Element {
     try {
       const [lRes, hRes] = await Promise.all([
         apiFetch(`/signals/${sym}/latest`),
-        apiFetch(`/signals/${sym}/history?limit=30`),
+        apiFetch(`/signals/${sym}/history?limit=60`),
       ]);
       setLatest(lRes.ok ? ((await lRes.json()) as SpySignal) : null);
       setHistory(hRes.ok ? ((await hRes.json()) as History).signals : []);
@@ -154,107 +137,75 @@ export default function SignalsPage(): React.JSX.Element {
 
   useEffect(() => {
     void load(symbol);
-    const id = setInterval(() => void load(symbol), 60_000); // auto-refresh every 1 min (matches the job)
+    const id = setInterval(() => void load(symbol), 60_000);
     return () => clearInterval(id);
   }, [load, symbol]);
 
-  if (authLoading || !user) return <main style={{ background: "#0a0a0a", minHeight: "100vh" }} />;
+  if (authLoading || !user) return <main style={{ background: color.bg, minHeight: "100vh" }} />;
+
+  // Price series for the sparkline (oldest → newest).
+  const priceSeries = [...history].reverse().map((r) => ({ t: r.ts, v: r.price }));
 
   return (
-    <main
-      style={{
-        background: "#0a0a0a",
-        color: "#f5f5f5",
-        height: "100vh",
-        overflowY: "auto",
-        padding: "32px 28px",
-        fontFamily: "inherit",
-        maxWidth: 760,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 6 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>Signals</h1>
-        {latest && (
-          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 18 }}>
+    <PageShell
+      maxWidth={840}
+      title="Signals"
+      right={
+        latest ? (
+          <span style={{ fontFamily: font.mono, fontSize: 16, color: color.fg }}>
             ${latest.price.toFixed(2)}
+            {latest.volume > 0 && (
+              <span style={{ color: color.muted, fontSize: 13 }}>
+                {" "}
+                · vol {fmtVolume(latest.volume)}
+              </span>
+            )}
           </span>
-        )}
-        {latest && latest.volume > 0 && (
-          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 13, color: "#777" }}>
-            vol {fmtVolume(latest.volume)}
-          </span>
-        )}
+        ) : null
+      }
+      subtitle="Heuristic indicator over recent price action and volume — auto-refreshes every minute. Not a prediction, not financial advice."
+    >
+      <div style={{ marginBottom: space[4] }}>
+        <Tabs options={SYMBOLS} value={symbol} onChange={setSymbol} />
       </div>
 
-      {/* Symbol tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {SYMBOLS.map((sym) => {
-          const active = sym === symbol;
-          return (
-            <button
-              key={sym}
-              onClick={() => setSymbol(sym)}
-              style={{
-                background: active ? "#e8ff47" : "#161616",
-                color: active ? "#0a0a0a" : "#bbb",
-                border: `1px solid ${active ? "#e8ff47" : "#2a2a2a"}`,
-                borderRadius: 6,
-                padding: "6px 16px",
-                fontWeight: 700,
-                fontSize: 13,
-                letterSpacing: "0.04em",
-                cursor: "pointer",
-              }}
-            >
-              {sym}
-            </button>
-          );
-        })}
-      </div>
+      {error && <div style={{ color: color.down, fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
-      <p style={{ color: "#555", fontSize: 12, marginBottom: 20 }}>
-        Heuristic indicator over recent price action <strong>and volume</strong> — auto-refreshes
-        every minute. Not a prediction, not financial advice.
-      </p>
-
-      {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {priceSeries.length > 1 && (
+        <Card pad={space[3]} style={{ marginBottom: space[3] }}>
+          <div style={{ ...labelStyle, marginBottom: 4 }}>
+            {symbol} price · last {priceSeries.length} min
+          </div>
+          <Sparkline data={priceSeries} dataKey="v" height={110} />
+        </Card>
+      )}
 
       {latest ? (
         <>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-              gap: 12,
-              marginBottom: 8,
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: space[3],
+              marginBottom: space[2],
             }}
           >
             {latest.signals.map((s) => (
-              <Badge key={s.horizon_min} s={s} />
+              <SignalBadge key={s.horizon_min} s={s} />
             ))}
           </div>
-          <div style={{ color: "#555", fontSize: 11, marginBottom: 28 }}>
+          <div style={{ color: color.faint, fontSize: 11, marginBottom: space[5] }}>
             updated {new Date(latest.ts).toLocaleTimeString()}
           </div>
         </>
       ) : (
-        <div style={{ color: "#777", fontSize: 14, marginBottom: 28 }}>
+        <div style={{ color: color.muted, fontSize: 14, marginBottom: space[5] }}>
           No {symbol} signal yet — markets may be closed, or the job hasn’t run a full cycle.
         </div>
       )}
 
-      {/* History */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 14,
-          flexWrap: "wrap",
-          marginBottom: 8,
-        }}
-      >
-        <h2 style={{ fontSize: 14, color: "#777", fontWeight: 600 }}>Recent</h2>
-        {(() => {
+      <SectionTitle
+        right={(() => {
           const acc = accuracy(history);
           const hitParts = HZ.filter((h) => acc[h].total > 0).map(
             (h) =>
@@ -264,45 +215,34 @@ export default function SignalsPage(): React.JSX.Element {
             (h) => `${hzShort(h)} ${Math.round((acc[h].confSum / acc[h].confN) * 100)}%`
           );
           return (
-            <span
-              style={{ fontSize: 11, color: "#888", fontFamily: "var(--font-mono, monospace)" }}
-            >
+            <span style={{ fontSize: 11, color: color.muted, fontFamily: font.mono }}>
               {hitParts.length > 0
                 ? `backtest hit-rate · ${hitParts.join("  ·  ")}`
-                : "backtest hit-rate · pending (horizons not elapsed yet)"}
+                : "backtest hit-rate · pending"}
               {confParts.length > 0 && (
                 <>
-                  <span style={{ color: "#444" }}> &nbsp;|&nbsp; </span>
+                  <span style={{ color: color.faint }}> &nbsp;|&nbsp; </span>
                   avg confidence · {confParts.join("  ·  ")}
                 </>
               )}
             </span>
           );
         })()}
-      </div>
-      <div
-        style={{
-          background: "#111",
-          border: "1px solid #222",
-          borderRadius: 10,
-          overflow: "hidden",
-        }}
       >
+        Recent
+      </SectionTitle>
+
+      <Card pad={0} style={{ overflow: "hidden" }}>
         <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontSize: 13,
-            fontFamily: "var(--font-mono, monospace)",
-          }}
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: font.mono }}
         >
           <thead>
-            <tr style={{ color: "#777" }}>
-              <th style={{ textAlign: "left", padding: "10px 14px" }}>Time</th>
-              <th style={{ textAlign: "right", padding: "10px 14px" }}>Price</th>
-              <th style={{ textAlign: "right", padding: "10px 14px" }}>Vol</th>
+            <tr style={{ color: color.muted }}>
+              <th style={{ ...th, textAlign: "left" }}>Time</th>
+              <th style={{ ...th, textAlign: "right" }}>Price</th>
+              <th style={{ ...th, textAlign: "right" }}>Vol</th>
               {HZ.map((h) => (
-                <th key={h} style={{ textAlign: "center", padding: "10px 14px" }}>
+                <th key={h} style={{ ...th, textAlign: "center" }}>
                   {hzShort(h)}
                 </th>
               ))}
@@ -310,12 +250,12 @@ export default function SignalsPage(): React.JSX.Element {
           </thead>
           <tbody>
             {history.map((row) => (
-              <tr key={row.ts} style={{ borderTop: "1px solid #1a1a1a" }}>
-                <td style={{ padding: "8px 14px", color: "#aaa" }}>
+              <tr key={row.ts} style={{ borderTop: `1px solid ${color.border}` }}>
+                <td style={{ ...td, color: color.muted }}>
                   {new Date(row.ts).toLocaleTimeString()}
                 </td>
-                <td style={{ padding: "8px 14px", textAlign: "right" }}>${row.price.toFixed(2)}</td>
-                <td style={{ padding: "8px 14px", textAlign: "right", color: "#888" }}>
+                <td style={{ ...td, textAlign: "right" }}>${row.price.toFixed(2)}</td>
+                <td style={{ ...td, textAlign: "right", color: color.muted }}>
                   {fmtVolume(row.volume)}
                 </td>
                 {row.signals.map((s) => (
@@ -323,9 +263,9 @@ export default function SignalsPage(): React.JSX.Element {
                     key={s.horizon_min}
                     title={s.reason}
                     style={{
-                      padding: "8px 14px",
+                      ...td,
                       textAlign: "center",
-                      color: color(s.label),
+                      color: labelColor(s.label),
                       cursor: s.reason ? "help" : "default",
                     }}
                   >
@@ -337,14 +277,18 @@ export default function SignalsPage(): React.JSX.Element {
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: 14, color: "#555" }}>
+                <td colSpan={8} style={{ padding: 14, color: color.faint }}>
                   No history yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
-    </main>
+      </Card>
+    </PageShell>
   );
 }
+
+const labelStyle: React.CSSProperties = { color: color.muted, fontSize: 11 };
+const th: React.CSSProperties = { padding: "10px 14px" };
+const td: React.CSSProperties = { padding: "8px 14px" };
