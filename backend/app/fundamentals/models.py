@@ -138,6 +138,14 @@ class PriceResponse(BaseModel):
     source: str = "finnhub"
 
 
+class ForwardResponse(BaseModel):
+    symbol: str
+    price: float | None = None
+    forward_eps: float | None = None
+    trailing_eps: float | None = None
+    forward_pe: float | None = None  # price / forward_eps; None when not determinable
+
+
 class TrackedEquity(BaseModel):
     symbol: str
     name: str | None = None

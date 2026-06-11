@@ -7,10 +7,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
+from app.fundamentals.forward import forward_metrics
 from app.fundamentals.ingest import ingest_statements
 from app.fundamentals.metrics import FundamentalMetrics, MetricContext, available_metrics, to_ttm
 from app.fundamentals.models import (
     EquityFinancials,
+    ForwardResponse,
     MetricsResponse,
     PeriodType,
     PriceResponse,
@@ -274,4 +276,19 @@ async def price(symbol: str, request: Request) -> PriceResponse:
         price=px,
         ts=datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
         stale=stale,
+    )
+
+
+@router.get("/{symbol}/forward", response_model=ForwardResponse)
+async def forward(symbol: str, request: Request) -> ForwardResponse:
+    """Forward P/E at the current price — deterministic; null fields when no estimate."""
+    resolved = await resolve_price(symbol, _price_cache(request))
+    px = resolved[0] if resolved is not None else None
+    fwd = await forward_metrics(symbol, px)
+    return ForwardResponse(
+        symbol=symbol.upper(),
+        price=px,
+        forward_eps=fwd["forward_eps"],
+        trailing_eps=fwd["trailing_eps"],
+        forward_pe=fwd["forward_pe"],
     )
