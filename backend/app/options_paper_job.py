@@ -44,7 +44,11 @@ ET = ZoneInfo("America/New_York")
 REPORT_PATH = os.getenv("OPTIONS_REPORT_PATH", "/app/options_report.json")
 HOLD_MIN = int(os.getenv("OPT_HOLD_MIN", "5"))
 MAX_OPEN = int(os.getenv("OPT_MAX_OPEN", "5"))  # per strategy
-MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.0002"))
+# Raised from 0.0002 → 0.001: a 0.02%/5-min move is noise; demand ~0.1% before acting.
+MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.001"))
+# After a strategy opens, it may not re-enter for this many minutes (stops scalping
+# the same drift every bar).
+REENTRY_COOLDOWN_MIN = int(os.getenv("OPT_REENTRY_COOLDOWN_MIN", "10"))
 END_PT = os.getenv("OPT_END_PT", "13:15")
 QTY = 1
 
@@ -104,7 +108,6 @@ def sig_momentum(bars: list[Any]) -> tuple[str, float]:
 
 def sig_bbands_macd_vol(bars: list[Any]) -> tuple[str, float]:
     closes = [float(b.close) for b in bars]
-    vols = [float(getattr(b, "volume", 0) or 0) for b in bars]
     if len(closes) < 30:
         return "SKIP", (closes[-1] if closes else 0.0)
     bb = bollinger(closes)
@@ -113,14 +116,12 @@ def sig_bbands_macd_vol(bars: list[Any]) -> tuple[str, float]:
         return "SKIP", closes[-1]
     pos, _bw = bb
     _macd_line, _signal, hist = mc
-    avg_vol = statistics.fmean(vols[-20:]) if len(vols) >= 20 else 0.0
-    recent_vol = statistics.fmean(vols[-3:])
-    vol_ratio = (recent_vol / avg_vol) if avg_vol else 0.0
     price = closes[-1]
-    # Mean-reversion at the bands, confirmed by MACD turning + volume participation.
-    if pos <= -0.8 and hist > 0 and vol_ratio >= 1.0:
+    # Loosened: mean-reversion at the bands confirmed only by the MACD histogram
+    # (the always-on volume gate was too strict and never fired). Band-touch + MACD.
+    if pos <= -0.8 and hist > 0:
         return "CALL", price
-    if pos >= 0.8 and hist < 0 and vol_ratio >= 1.0:
+    if pos >= 0.8 and hist < 0:
         return "PUT", price
     return "SKIP", price
 
@@ -264,6 +265,7 @@ def main() -> None:
 
     open_trades: list[dict[str, Any]] = []
     closed: list[dict[str, Any]] = []
+    last_entry: dict[str, datetime] = {}  # strategy → last open time (cooldown)
 
     def close_trade(t: dict[str, Any]) -> None:
         try:
@@ -292,6 +294,9 @@ def main() -> None:
                     held = sum(1 for t in open_trades if t["strategy"] == name)
                     if held >= MAX_OPEN:
                         continue
+                    le = last_entry.get(name)
+                    if le is not None and (now - le).total_seconds() < REENTRY_COOLDOWN_MIN * 60:
+                        continue  # cooldown — don't re-enter the same drift every minute
                     side, price = strat["signal"](bars)
                     if side not in ("CALL", "PUT") or price <= 0:
                         continue
@@ -315,6 +320,7 @@ def main() -> None:
                             "exit_at": now + timedelta(minutes=HOLD_MIN),
                         }
                     )
+                    last_entry[name] = now
                     log.info("[%s] BUY %s %s @ %.2f (SPY %.2f)", name, side, c.symbol, entry, price)
             _write_report(closed, open_trades, now_pt)
         except Exception as exc:  # noqa: BLE001

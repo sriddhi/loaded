@@ -49,12 +49,11 @@ def test_macd_and_bollinger_basic():
 # ── bbands_macd_vol strategy ────────────────────────────────────────────────────
 
 
-def test_bbands_macd_vol_buys_dip_with_volume():
-    # 30 flat bars then a sharp dip with a volume surge → oversold at lower band.
-    closes = [100.0] * 30 + [99.0, 98.0, 97.0]
-    vols = [1000.0] * 30 + [3000.0, 3000.0, 3000.0]
-    side, _ = sig_bbands_macd_vol(_bars(closes, vols))
-    assert side in ("CALL", "PUT", "SKIP")  # deterministic, no crash
+def test_bbands_macd_vol_band_touch_plus_macd():
+    # Volume gate dropped — now band-touch + MACD only. Deterministic, no crash.
+    closes = [100.0] * 30 + [99.0, 98.0, 97.0]  # oversold dip at the lower band
+    side, _ = sig_bbands_macd_vol(_bars(closes))
+    assert side in ("CALL", "PUT", "SKIP")
     assert sig_bbands_macd_vol(_bars([100.0] * 10))[0] == "SKIP"  # too few bars
 
 
