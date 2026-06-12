@@ -101,3 +101,42 @@ def test_report_groups_by_strategy_and_combined(tmp_path, monkeypatch):
     assert rep["by_strategy"]["momentum"]["right"] == 1
     assert rep["by_strategy"]["bbands_macd_vol"]["total_upside_usd"] == 8.0
     assert rep["account"].startswith("ALPACA PAPER")
+
+
+# ── event-driven engine ────────────────────────────────────────────────────────
+
+
+def test_rolling_bars_buckets_by_minute():
+    from datetime import UTC, datetime, timedelta
+
+    from app.options_paper_job import RollingBars
+
+    rb = RollingBars(keep=3)
+    t0 = datetime(2026, 6, 12, 14, 30, tzinfo=UTC)
+    rb.update(t0, 100.0)
+    rb.update(t0 + timedelta(seconds=30), 100.5)  # same minute → overwrite
+    rb.update(t0 + timedelta(minutes=1), 101.0)
+    rb.update(t0 + timedelta(minutes=2), 102.0)
+    rb.update(t0 + timedelta(minutes=3), 103.0)  # evicts the first minute
+    closes = [b.close for b in rb.bars()]
+    assert closes == [101.0, 102.0, 103.0]
+    assert len(rb) == 3
+
+
+def test_event_engine_throttles_evaluations(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    import app.options_paper_job as job
+
+    tc = MagicMock()
+    now = datetime.now(UTC)
+    eng = job.EventEngine(tc, end_pt=now + timedelta(hours=1), start_pt=now)
+    calls = {"n": 0}
+    monkeypatch.setattr(eng, "check_exits", lambda: calls.__setitem__("n", calls["n"] + 1))
+    monkeypatch.setattr(eng, "try_entries", lambda: None)
+    monkeypatch.setattr(eng, "flush_report", lambda force=False: None)
+    # 50 rapid-fire ticks within the throttle window → exactly 1 evaluation.
+    for i in range(50):
+        eng.on_trade(now, 100.0 + i * 0.01)
+    assert eng.events_seen == 50
+    assert calls["n"] == 1

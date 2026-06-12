@@ -276,7 +276,171 @@ def _write_report(
         json.dump(report, f, indent=2, default=str)
 
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
+# ── Event-driven engine (websocket) ───────────────────────────────────────────
+#
+# Instead of waking every 60s, the engine reacts to every SPY trade event from
+# the Alpaca stream: entries fire the moment a move crosses the threshold, and
+# TP/SL exits are checked tick-by-tick (throttled) instead of once a minute.
+
+EVAL_INTERVAL_S = float(os.getenv("OPT_EVAL_INTERVAL_S", "1.0"))  # min gap between evals
+EXIT_POLL_S = float(os.getenv("OPT_EXIT_POLL_S", "1.0"))  # per-position option-quote poll
+REPORT_FLUSH_S = 30.0
+
+
+class RollingBars:
+    """1-minute closes built from streamed trades (oldest→newest, ≤`keep`)."""
+
+    def __init__(self, keep: int = 60) -> None:
+        self.keep = keep
+        self._minutes: list[tuple[datetime, float]] = []  # (minute, last price)
+
+    def update(self, ts: datetime, price: float) -> None:
+        minute = ts.replace(second=0, microsecond=0)
+        if self._minutes and self._minutes[-1][0] == minute:
+            self._minutes[-1] = (minute, price)
+        else:
+            self._minutes.append((minute, price))
+            if len(self._minutes) > self.keep:
+                self._minutes.pop(0)
+
+    def bars(self) -> list[Any]:
+        from types import SimpleNamespace
+
+        return [SimpleNamespace(close=c) for _, c in self._minutes]
+
+    def __len__(self) -> int:
+        return len(self._minutes)
+
+
+class EventEngine:
+    """Shared trading state; methods are called from the stream's event loop
+    thread and the maintenance thread, guarded by a lock."""
+
+    def __init__(self, tc: Any, end_pt: datetime, start_pt: datetime) -> None:
+        import threading
+
+        self.tc = tc
+        self.end_pt = end_pt
+        self.start_pt = start_pt
+        self.lock = threading.Lock()
+        self.rolling = RollingBars()
+        self.open_trades: list[dict[str, Any]] = []
+        self.closed: list[dict[str, Any]] = []
+        self.last_entry: dict[str, datetime] = {}
+        self._last_eval = 0.0
+        self._last_report = 0.0
+        self._market_open = False
+        self._market_checked = 0.0
+        self.events_seen = 0
+
+    # ── helpers ──
+    def market_open(self) -> bool:
+        if time.time() - self._market_checked > 60:
+            try:
+                self._market_open = bool(self.tc.get_clock().is_open)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("clock check failed: %s", exc)
+            self._market_checked = time.time()
+        return self._market_open
+
+    def close_trade(self, t: dict[str, Any]) -> None:
+        try:
+            o = _order(self.tc, t["contract"], buy=False)
+            exit_px = _filled_price(self.tc, o.id) or t["entry"]
+        except Exception as exc:  # noqa: BLE001
+            log.warning("close failed for %s: %s", t["contract"], exc)
+            exit_px = t["entry"]
+        pnl = round((exit_px - t["entry"]) * 100 * QTY, 2)
+        t.update(exit=exit_px, pnl=pnl, right=pnl > 0, closed_at=datetime.now(UTC).isoformat())
+        self.closed.append(t)
+        log.info(
+            "[%s] CLOSE %s @ %.2f (%s, pnl $%.2f)",
+            t["strategy"],
+            t["contract"],
+            exit_px,
+            t.get("exit_reason"),
+            pnl,
+        )
+
+    def check_exits(self) -> None:
+        now = datetime.now(UTC)
+        for t in list(self.open_trades):
+            due = now >= t["exit_at"]
+            px = None
+            if not due and time.time() - t.get("_last_poll", 0.0) >= EXIT_POLL_S:
+                t["_last_poll"] = time.time()
+                px = _option_last_price(t["contract"])
+            if px is not None and t["entry"] > 0:
+                ret = px / t["entry"] - 1
+                if ret >= TAKE_PROFIT:
+                    t["exit_reason"] = "take_profit"
+                    due = True
+                elif ret <= -STOP_LOSS:
+                    t["exit_reason"] = "stop_loss"
+                    due = True
+            if due:
+                t.setdefault("exit_reason", "time_stop")
+                t.pop("_last_poll", None)
+                self.close_trade(t)
+                self.open_trades.remove(t)
+
+    def try_entries(self) -> None:
+        if not self.market_open() or len(self.rolling) < 6:
+            return
+        now = datetime.now(UTC)
+        bars = self.rolling.bars()
+        for strat in STRATEGIES:
+            name = strat["name"]
+            if sum(1 for t in self.open_trades if t["strategy"] == name) >= MAX_OPEN:
+                continue
+            le = self.last_entry.get(name)
+            if le is not None and (now - le).total_seconds() < REENTRY_COOLDOWN_MIN * 60:
+                continue
+            side, price = strat["signal"](bars)
+            if side not in ("CALL", "PUT") or price <= 0:
+                continue
+            c = pick_contract(self.tc, side, price)
+            if c is None:
+                continue
+            o = _order(self.tc, c.symbol, buy=True)
+            entry = _filled_price(self.tc, o.id)
+            if entry is None:
+                continue
+            self.open_trades.append(
+                {
+                    "strategy": name,
+                    "contract": c.symbol,
+                    "side": side,
+                    "strike": float(c.strike_price),
+                    "expiry": str(c.expiration_date),
+                    "spy": round(price, 2),
+                    "entry": entry,
+                    "opened_at": now.isoformat(),
+                    "exit_at": now + timedelta(minutes=HOLD_MIN),
+                }
+            )
+            self.last_entry[name] = now
+            log.info("[%s] BUY %s %s @ %.2f (SPY %.2f)", name, side, c.symbol, entry, price)
+
+    def flush_report(self, force: bool = False) -> None:
+        if force or time.time() - self._last_report >= REPORT_FLUSH_S:
+            self._last_report = time.time()
+            _write_report(self.closed, self.open_trades, self.start_pt)
+
+    # ── the event handler (every SPY trade tick) ──
+    def on_trade(self, ts: datetime, price: float) -> None:
+        with self.lock:
+            self.events_seen += 1
+            self.rolling.update(ts.astimezone(ET), price)
+            if time.time() - self._last_eval < EVAL_INTERVAL_S:
+                return  # throttle: at most ~1 evaluation/sec on a busy tape
+            self._last_eval = time.time()
+            try:
+                self.check_exits()
+                self.try_entries()
+                self.flush_report()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("event error: %s", exc)
 
 
 def main() -> None:
@@ -295,89 +459,62 @@ def main() -> None:
     end_pt = now_pt.replace(hour=hh, minute=mm, second=0, microsecond=0)
     if end_pt <= now_pt:
         end_pt += timedelta(days=1)
-    log.info("Running every 60s until %s", end_pt.strftime("%Y-%m-%d %H:%M %Z"))
 
-    open_trades: list[dict[str, Any]] = []
-    closed: list[dict[str, Any]] = []
-    last_entry: dict[str, datetime] = {}  # strategy → last open time (cooldown)
+    engine = EventEngine(tc, end_pt, now_pt)
 
-    def close_trade(t: dict[str, Any]) -> None:
-        try:
-            o = _order(tc, t["contract"], buy=False)
-            exit_px = _filled_price(tc, o.id) or t["entry"]
-        except Exception as exc:  # noqa: BLE001
-            log.warning("close failed for %s: %s", t["contract"], exc)
-            exit_px = t["entry"]
-        pnl = round((exit_px - t["entry"]) * 100 * QTY, 2)
-        t.update(exit=exit_px, pnl=pnl, right=pnl > 0, closed_at=datetime.now(UTC).isoformat())
-        closed.append(t)
+    # Seed the rolling bars from REST so signals work immediately on startup.
+    try:
+        for b in _fetch_bars(sd):
+            engine.rolling.update(b.timestamp.astimezone(ET), float(b.close))
+        log.info("seeded %d minute bars from REST", len(engine.rolling))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bar seed failed (stream will build state): %s", exc)
 
-    while datetime.now(PT) < end_pt:
-        try:
-            now = datetime.now(UTC)
-            # 1) exits: option-level take-profit / stop-loss, else the time stop
-            for t in list(open_trades):
-                due = now >= t["exit_at"]
-                px = None if due else _option_last_price(t["contract"])
-                if px is not None and t["entry"] > 0:
-                    ret = px / t["entry"] - 1
-                    if ret >= TAKE_PROFIT:
-                        t["exit_reason"] = "take_profit"
-                        due = True
-                    elif ret <= -STOP_LOSS:
-                        t["exit_reason"] = "stop_loss"
-                        due = True
-                if due:
-                    t.setdefault("exit_reason", "time_stop")
-                    close_trade(t)
-                    open_trades.remove(t)
-            # 2) per-strategy decisions while market open
-            clk = tc.get_clock()
-            if clk.is_open:
-                bars = _fetch_bars(sd)
-                for strat in STRATEGIES:
-                    name = strat["name"]
-                    held = sum(1 for t in open_trades if t["strategy"] == name)
-                    if held >= MAX_OPEN:
-                        continue
-                    le = last_entry.get(name)
-                    if le is not None and (now - le).total_seconds() < REENTRY_COOLDOWN_MIN * 60:
-                        continue  # cooldown — don't re-enter the same drift every minute
-                    side, price = strat["signal"](bars)
-                    if side not in ("CALL", "PUT") or price <= 0:
-                        continue
-                    c = pick_contract(tc, side, price)
-                    if c is None:
-                        continue
-                    o = _order(tc, c.symbol, buy=True)
-                    entry = _filled_price(tc, o.id)
-                    if entry is None:
-                        continue
-                    open_trades.append(
-                        {
-                            "strategy": name,
-                            "contract": c.symbol,
-                            "side": side,
-                            "strike": float(c.strike_price),
-                            "expiry": str(c.expiration_date),
-                            "spy": round(price, 2),
-                            "entry": entry,
-                            "opened_at": now.isoformat(),
-                            "exit_at": now + timedelta(minutes=HOLD_MIN),
-                        }
-                    )
-                    last_entry[name] = now
-                    log.info("[%s] BUY %s %s @ %.2f (SPY %.2f)", name, side, c.symbol, entry, price)
-            _write_report(closed, open_trades, now_pt)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("tick error: %s", exc)
-        time.sleep(60)
+    from alpaca.data.live import StockDataStream
 
-    for t in list(open_trades):
-        close_trade(t)
-        open_trades.remove(t)
-    _write_report(closed, open_trades, now_pt)
-    log.info("Done. %d decisions, total upside $%.2f", len(closed), sum(t["pnl"] for t in closed))
+    stream = StockDataStream(
+        os.environ["ALPACA_PAPER_API_KEY"], os.environ["ALPACA_PAPER_SECRET_KEY"]
+    )
+
+    async def on_trade(trade: Any) -> None:
+        engine.on_trade(trade.timestamp, float(trade.price))
+
+    stream.subscribe_trades(on_trade, "SPY")
+    log.info("EVENT-DRIVEN: streaming SPY trades until %s", end_pt.strftime("%Y-%m-%d %H:%M %Z"))
+
+    import threading
+
+    ws_thread = threading.Thread(target=stream.run, daemon=True, name="alpaca-stream")
+    ws_thread.start()
+
+    # Maintenance: time stops / EOD flush keep working even when no events arrive
+    # (quiet tape, after-hours); also enforces the end-of-window shutdown.
+    try:
+        while datetime.now(PT) < end_pt:
+            time.sleep(15)
+            with engine.lock:
+                try:
+                    engine.check_exits()
+                    engine.flush_report()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("maintenance error: %s", exc)
+    finally:
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            stream.stop()
+        with engine.lock:
+            for t in list(engine.open_trades):
+                t.setdefault("exit_reason", "end_of_window")
+                engine.close_trade(t)
+                engine.open_trades.remove(t)
+            engine.flush_report(force=True)
+        log.info(
+            "Done. %d decisions (%d events seen), total upside $%.2f",
+            len(engine.closed),
+            engine.events_seen,
+            sum(t["pnl"] for t in engine.closed),
+        )
 
 
 if __name__ == "__main__":
