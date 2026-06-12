@@ -133,6 +133,30 @@
       "evaluator_globs": [
         "ai/evaluator/macro/*_evaluator.md"
       ]
+    },
+    {
+      "name": "portfolio",
+      "code_globs": [
+        "backend/app/portfolio/**"
+      ],
+      "generator_globs": [
+        "ai/generator/portfolio/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/portfolio/*_evaluator.md"
+      ]
+    },
+    {
+      "name": "screener",
+      "code_globs": [
+        "backend/app/screener/**"
+      ],
+      "generator_globs": [
+        "ai/generator/screener/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/screener/*_evaluator.md"
+      ]
     }
   ],
   "exempt_globs": [

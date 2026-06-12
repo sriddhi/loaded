@@ -26,6 +26,7 @@ from app.macro.router import router as macro_router
 from app.marketdata.router import router as marketdata_router
 from app.ops.metrics import METRICS
 from app.ops.router import router as ops_router
+from app.portfolio.router import router as portfolio_router
 from app.signals.backtest import BacktestJob
 from app.signals.job import SpySignalJob, signals_enabled
 from app.signals.retention import RetentionJob
@@ -519,6 +520,70 @@ CREATE TABLE IF NOT EXISTS macro_alert_state (
     last_eval TIMESTAMPTZ NOT NULL
 );
 
+-- ── Portfolio module: per-user books & records (TRACK pillar) ────────────────
+CREATE TABLE IF NOT EXISTS portfolios (
+    id             SERIAL PRIMARY KEY,
+    owner_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    kind           TEXT NOT NULL DEFAULT 'manual',
+    cost_method    TEXT NOT NULL DEFAULT 'average',
+    base_currency  TEXT NOT NULL DEFAULT 'USD',
+    cash_cents     BIGINT NOT NULL DEFAULT 0,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    last_synced_at TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_id, name)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolios_owner_alpaca
+    ON portfolios(owner_id) WHERE kind = 'alpaca_paper';
+
+CREATE TABLE IF NOT EXISTS portfolio_transactions (
+    id           SERIAL PRIMARY KEY,
+    portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+    symbol       TEXT,
+    tx_type      TEXT NOT NULL,
+    qty          NUMERIC(18,6),
+    price_cents  BIGINT,
+    amount_cents BIGINT NOT NULL,
+    fees_cents   BIGINT NOT NULL DEFAULT 0,
+    trade_date   DATE NOT NULL,
+    note         TEXT,
+    source       TEXT NOT NULL DEFAULT 'manual',
+    external_id  TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (portfolio_id, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_tx_pid_date
+    ON portfolio_transactions(portfolio_id, trade_date, id);
+
+CREATE TABLE IF NOT EXISTS portfolio_holdings (
+    portfolio_id       INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+    symbol             TEXT NOT NULL,
+    qty                NUMERIC(18,6) NOT NULL,
+    avg_cost_cents     BIGINT NOT NULL,
+    cost_basis_cents   BIGINT NOT NULL,
+    realized_pnl_cents BIGINT NOT NULL DEFAULT 0,
+    first_acquired     DATE,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (portfolio_id, symbol)
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    portfolio_id         INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+    snapshot_date        DATE NOT NULL,
+    equity_value_cents   BIGINT NOT NULL,
+    cash_cents           BIGINT NOT NULL,
+    total_value_cents    BIGINT NOT NULL,
+    net_flow_cents       BIGINT NOT NULL DEFAULT 0,
+    realized_pnl_cents   BIGINT NOT NULL DEFAULT 0,
+    unrealized_pnl_cents BIGINT NOT NULL DEFAULT 0,
+    holdings_count       INTEGER NOT NULL DEFAULT 0,
+    detail               JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (portfolio_id, snapshot_date)
+);
+
 -- Backtest verdicts per horizon (NULL = not yet evaluated). Filled by BacktestJob
 -- once the horizon has elapsed: 'correct' | 'wrong'.
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_5m TEXT;
@@ -824,6 +889,7 @@ app.include_router(fundamentals_router, dependencies=_auth_dep)
 app.include_router(signals_router, dependencies=_auth_dep)
 app.include_router(ops_router, dependencies=_auth_dep)
 app.include_router(macro_router, dependencies=_auth_dep)
+app.include_router(portfolio_router, dependencies=_auth_dep)
 
 
 @app.middleware("http")

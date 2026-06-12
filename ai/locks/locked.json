@@ -215,6 +215,18 @@
       "sha256": "5c0c13ac39435c5a01df9e1d108ea40c25509b79cba1fc76adb9fd6bc2c08b53",
       "locked_at": "2026-06-12T21:12:49Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/portfolio/portfolio_core_generator.md",
+      "sha256": "674d79b7dd1cb9b4fd47910e519a2a33cc4b9530d66687febbc2a9c7651dde41",
+      "locked_at": "2026-06-12T23:16:24Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/portfolio/portfolio_core_evaluator.md",
+      "sha256": "4c608ff06bf004fd673b8401c204aafd29f8b31514cc7c71a2ad99e244732c9e",
+      "locked_at": "2026-06-12T23:16:24Z",
+      "version": "1.0"
     }
   ]
 }

@@ -46,6 +46,7 @@ export default function Home(): React.JSX.Element {
           { href: "/signals", label: "Signals" },
           { href: "/strategies", label: "Strategy Lab" },
           { href: "/tools", label: "Tools" },
+          { href: "/portfolio", label: "Portfolio" },
           { href: "/macro", label: "Macro" },
           { href: "/paper", label: "Paper Trading" },
           { href: "/settings", label: "Settings" },
