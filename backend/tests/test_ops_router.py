@@ -46,3 +46,32 @@ def test_overview_returns_jobs_api_and_insights():
     assert len(body["insights"]["per_symbol"]) == len(SYMBOLS)
     assert len(body["insights"]["hit_rate"]) == 5  # 1m,5m,10m,20m,1d
     assert body["insights"]["hit_rate"][0]["accuracy"] == 0.75
+
+
+def test_paper_reports_list_and_detail(tmp_path, monkeypatch):
+    import json as _json
+
+    import app.ops.router as ops_router
+
+    monkeypatch.setattr(ops_router, "_REPORT_DIR", str(tmp_path))
+    sample = {
+        "underlyings": ["SPY", "MU"],
+        "combined": {"decisions": 3, "right": 2, "wrong": 1, "total_upside_usd": 14.0},
+        "trades": [],
+    }
+    (tmp_path / "2026-06-15.json").write_text(_json.dumps(sample))
+    (tmp_path / "latest.json").write_text(_json.dumps(sample))  # excluded from list
+
+    tc = _client()
+    resp = tc.get("/ops/paper/reports")
+    assert resp.status_code == 200
+    reports = resp.json()["reports"]
+    assert [r["date"] for r in reports] == ["2026-06-15"]
+    assert reports[0]["combined"]["decisions"] == 3
+
+    detail = tc.get("/ops/paper/reports/2026-06-15")
+    assert detail.status_code == 200
+    assert detail.json()["underlyings"] == ["SPY", "MU"]
+
+    assert tc.get("/ops/paper/reports/2026-06-16").status_code == 404
+    assert tc.get("/ops/paper/reports/not-a-date").status_code == 422

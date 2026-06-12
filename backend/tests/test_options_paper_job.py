@@ -86,20 +86,24 @@ def test_report_groups_by_strategy_and_combined(tmp_path, monkeypatch):
 
     import app.options_paper_job as job
 
-    path = tmp_path / "report.json"
-    monkeypatch.setattr(job, "REPORT_PATH", str(path))
+    monkeypatch.setattr(job, "REPORT_DIR", str(tmp_path))
+    monkeypatch.setattr(job, "REPORT_PATH", "")
     closed = [
-        {"strategy": "momentum", "pnl": 12.0, "right": True},
-        {"strategy": "momentum", "pnl": -6.0, "right": False},
-        {"strategy": "bbands_macd_vol", "pnl": 8.0, "right": True},
+        {"strategy": "momentum", "symbol": "SPY", "pnl": 12.0, "right": True},
+        {"strategy": "momentum", "symbol": "MU", "pnl": -6.0, "right": False},
+        {"strategy": "bbands_macd_vol", "symbol": "SPY", "pnl": 8.0, "right": True},
     ]
-    job._write_report(closed, [], datetime.now(UTC))
-    rep = json.loads(path.read_text())
+    now = datetime.now(UTC)
+    job._write_report(closed, [], now)
+    day = now.astimezone(job.PT).strftime("%Y-%m-%d")
+    rep = json.loads((tmp_path / f"{day}.json").read_text())  # per-day archive
+    latest = json.loads((tmp_path / "latest.json").read_text())
+    assert rep == latest
     assert rep["combined"]["decisions"] == 3
     assert rep["combined"]["total_upside_usd"] == 14.0
     assert rep["by_strategy"]["momentum"]["decisions"] == 2
-    assert rep["by_strategy"]["momentum"]["right"] == 1
-    assert rep["by_strategy"]["bbands_macd_vol"]["total_upside_usd"] == 8.0
+    assert rep["by_symbol"]["SPY"]["decisions"] == 2
+    assert rep["by_symbol"]["MU"]["total_upside_usd"] == -6.0
     assert rep["account"].startswith("ALPACA PAPER")
 
 
@@ -137,6 +141,6 @@ def test_event_engine_throttles_evaluations(monkeypatch):
     monkeypatch.setattr(eng, "flush_report", lambda force=False: None)
     # 50 rapid-fire ticks within the throttle window → exactly 1 evaluation.
     for i in range(50):
-        eng.on_trade(now, 100.0 + i * 0.01)
+        eng.on_trade("SPY", now, 100.0 + i * 0.01)
     assert eng.events_seen == 50
     assert calls["n"] == 1

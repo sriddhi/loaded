@@ -53,6 +53,8 @@ services:
       EARNINGS_AGEOUT_TRADING_DAYS: ${EARNINGS_AGEOUT_TRADING_DAYS:-2}
       EARNINGS_POLL_WINDOW: ${EARNINGS_POLL_WINDOW:-06:00-22:00}
       SIGNAL_INTERVAL_SECONDS: ${SIGNAL_INTERVAL_SECONDS:-60}
+      # Paper-trading report archive (written by the host-side options job).
+      OPTIONS_REPORT_DIR: ${OPTIONS_REPORT_DIR:-/tmp/options_reports}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
@@ -75,6 +77,9 @@ services:
     # Desktop (macOS/Windows) provides host.docker.internal automatically.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Host-side options paper job writes per-day reports here; backend serves them.
+    volumes:
+      - ${OPTIONS_REPORT_DIR:-/tmp/options_reports}:/tmp/options_reports:ro
     # Host port in the 9000-9999 range (override with BACKEND_PORT). Container
     # listens on 9000 (see backend/Dockerfile).
     ports:

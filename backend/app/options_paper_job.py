@@ -1,7 +1,8 @@
 """
-SPY 0-3 DTE options paper-trading job — multi-strategy, time-boxed experiment.
+0-3 DTE options paper-trading job — generic per-asset, multi-strategy, event-driven.
 
-Every minute it pulls recent SPY 1-minute bars and evaluates EACH strategy:
+Underlyings come from OPT_UNDERLYINGS (comma-separated, default "SPY"). For each
+streamed trade tick of each underlying it evaluates EACH strategy:
   - `momentum`        : ~5-min price momentum (up → call, down → put).
   - `bbands_macd_vol` : Bollinger-band mean reversion confirmed by MACD histogram
                         and above-average volume.
@@ -21,7 +22,7 @@ SAFETY — hard guarantees:
   while the market clock is open. 1 contract/trade, capped concurrency per strategy.
 
 Run (host or backend container): python -m app.options_paper_job
-Report: $OPTIONS_REPORT_PATH (default /app/options_report.json).
+Reports: $OPTIONS_REPORT_DIR/{YYYY-MM-DD}.json (per-day archive) + latest.json.
 """
 
 from __future__ import annotations
@@ -41,7 +42,12 @@ log = logging.getLogger("options_paper_job")
 PT = ZoneInfo("America/Los_Angeles")
 ET = ZoneInfo("America/New_York")
 
-REPORT_PATH = os.getenv("OPTIONS_REPORT_PATH", "/app/options_report.json")
+REPORT_DIR = os.getenv("OPTIONS_REPORT_DIR", "/tmp/options_reports")
+# Back-compat: also mirror the latest report to this path if set.
+REPORT_PATH = os.getenv("OPTIONS_REPORT_PATH", "")
+UNDERLYINGS = [
+    s.strip().upper() for s in os.getenv("OPT_UNDERLYINGS", "SPY").split(",") if s.strip()
+]
 # Time stop (was a blind hold) — the BS grid sweep favored ~45 min for the fade.
 HOLD_MIN = int(os.getenv("OPT_HOLD_MIN", "45"))
 MAX_OPEN = int(os.getenv("OPT_MAX_OPEN", "5"))  # per strategy
@@ -164,21 +170,21 @@ def _clients() -> tuple[Any, Any]:
     return TradingClient(key, sec, paper=True), StockHistoricalDataClient(key, sec)
 
 
-def _fetch_bars(stock_client: Any, limit: int = 60) -> list[Any]:
+def _fetch_bars(stock_client: Any, symbol: str, limit: int = 60) -> list[Any]:
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
 
-    req = StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Minute, limit=limit)
-    return list(stock_client.get_stock_bars(req).data.get("SPY", []))
+    req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=limit)
+    return list(stock_client.get_stock_bars(req).data.get(symbol, []))
 
 
-def pick_contract(tc: Any, side: str, price: float) -> Any | None:
+def pick_contract(tc: Any, side: str, price: float, underlying: str = "SPY") -> Any | None:
     from alpaca.trading.enums import AssetStatus, ContractType
     from alpaca.trading.requests import GetOptionContractsRequest
 
     today = datetime.now(ET).date()
     req = GetOptionContractsRequest(
-        underlying_symbols=["SPY"],
+        underlying_symbols=[underlying],
         status=AssetStatus.ACTIVE,
         type=ContractType.CALL if side == "CALL" else ContractType.PUT,
         expiration_date_gte=today,
@@ -256,24 +262,35 @@ def _write_report(
     closed: list[dict[str, Any]], open_trades: list[dict[str, Any]], start: datetime
 ) -> None:
     by_strategy: dict[str, list[dict[str, Any]]] = {}
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
     for t in closed:
         by_strategy.setdefault(t.get("strategy", "?"), []).append(t)
+        by_symbol.setdefault(t.get("symbol", "?"), []).append(t)
+    day = start.astimezone(PT).strftime("%Y-%m-%d")
     report = {
-        "title": "SPY 0-3 DTE options — multi-strategy paper decision report",
+        "title": "0-3 DTE options — multi-asset paper decision report",
         "account": "ALPACA PAPER (long options only, 1 contract/decision)",
+        "date": day,
+        "underlyings": UNDERLYINGS,
         "started_pt": start.astimezone(PT).strftime("%Y-%m-%d %H:%M %Z"),
         "ends_pt": END_PT + " PT",
         "updated": datetime.now(UTC).isoformat(),
         "by_strategy": {s: _tally(ts) for s, ts in by_strategy.items()},
+        "by_symbol": {s: _tally(ts) for s, ts in by_symbol.items()},
         "combined": _tally(closed),
         "open_now": {
             s: sum(1 for t in open_trades if t.get("strategy") == s)
             for s in {t.get("strategy") for t in open_trades}
         },
-        "trades": closed[-100:],
+        "trades": closed[-200:],
     }
-    with open(REPORT_PATH, "w") as f:
-        json.dump(report, f, indent=2, default=str)
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    payload = json.dumps(report, indent=2, default=str)
+    # Per-day archive + a stable "latest" pointer (+ legacy path if configured).
+    for path in (f"{REPORT_DIR}/{day}.json", f"{REPORT_DIR}/latest.json", REPORT_PATH or None):
+        if path:
+            with open(path, "w") as f:
+                f.write(payload)
 
 
 # ── Event-driven engine (websocket) ───────────────────────────────────────────
@@ -323,7 +340,7 @@ class EventEngine:
         self.end_pt = end_pt
         self.start_pt = start_pt
         self.lock = threading.Lock()
-        self.rolling = RollingBars()
+        self.rolling: dict[str, RollingBars] = {u: RollingBars() for u in UNDERLYINGS}
         self.open_trades: list[dict[str, Any]] = []
         self.closed: list[dict[str, Any]] = []
         self.last_entry: dict[str, datetime] = {}
@@ -384,22 +401,27 @@ class EventEngine:
                 self.close_trade(t)
                 self.open_trades.remove(t)
 
-    def try_entries(self) -> None:
-        if not self.market_open() or len(self.rolling) < 6:
+    def try_entries(self, symbol: str) -> None:
+        rolling = self.rolling[symbol]
+        if not self.market_open() or len(rolling) < 6:
             return
         now = datetime.now(UTC)
-        bars = self.rolling.bars()
+        bars = rolling.bars()
         for strat in STRATEGIES:
             name = strat["name"]
-            if sum(1 for t in self.open_trades if t["strategy"] == name) >= MAX_OPEN:
+            key = f"{name}:{symbol}"
+            if (
+                sum(1 for t in self.open_trades if t["strategy"] == name and t["symbol"] == symbol)
+                >= MAX_OPEN
+            ):
                 continue
-            le = self.last_entry.get(name)
+            le = self.last_entry.get(key)
             if le is not None and (now - le).total_seconds() < REENTRY_COOLDOWN_MIN * 60:
                 continue
             side, price = strat["signal"](bars)
             if side not in ("CALL", "PUT") or price <= 0:
                 continue
-            c = pick_contract(self.tc, side, price)
+            c = pick_contract(self.tc, side, price, underlying=symbol)
             if c is None:
                 continue
             o = _order(self.tc, c.symbol, buy=True)
@@ -409,35 +431,38 @@ class EventEngine:
             self.open_trades.append(
                 {
                     "strategy": name,
+                    "symbol": symbol,
                     "contract": c.symbol,
                     "side": side,
                     "strike": float(c.strike_price),
                     "expiry": str(c.expiration_date),
-                    "spy": round(price, 2),
+                    "underlying_px": round(price, 2),
                     "entry": entry,
                     "opened_at": now.isoformat(),
                     "exit_at": now + timedelta(minutes=HOLD_MIN),
                 }
             )
-            self.last_entry[name] = now
-            log.info("[%s] BUY %s %s @ %.2f (SPY %.2f)", name, side, c.symbol, entry, price)
+            self.last_entry[key] = now
+            log.info("[%s] BUY %s %s @ %.2f (%s %.2f)", name, side, c.symbol, entry, symbol, price)
 
     def flush_report(self, force: bool = False) -> None:
         if force or time.time() - self._last_report >= REPORT_FLUSH_S:
             self._last_report = time.time()
             _write_report(self.closed, self.open_trades, self.start_pt)
 
-    # ── the event handler (every SPY trade tick) ──
-    def on_trade(self, ts: datetime, price: float) -> None:
+    # ── the event handler (every trade tick of any underlying) ──
+    def on_trade(self, symbol: str, ts: datetime, price: float) -> None:
         with self.lock:
             self.events_seen += 1
-            self.rolling.update(ts.astimezone(ET), price)
+            if symbol not in self.rolling:
+                return
+            self.rolling[symbol].update(ts.astimezone(ET), price)
             if time.time() - self._last_eval < EVAL_INTERVAL_S:
                 return  # throttle: at most ~1 evaluation/sec on a busy tape
             self._last_eval = time.time()
             try:
                 self.check_exits()
-                self.try_entries()
+                self.try_entries(symbol)
                 self.flush_report()
             except Exception as exc:  # noqa: BLE001
                 log.warning("event error: %s", exc)
@@ -478,12 +503,13 @@ def main() -> None:
     engine = EventEngine(tc, end_pt, now_pt)
 
     # Seed the rolling bars from REST so signals work immediately on startup.
-    try:
-        for b in _fetch_bars(sd):
-            engine.rolling.update(b.timestamp.astimezone(ET), float(b.close))
-        log.info("seeded %d minute bars from REST", len(engine.rolling))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("bar seed failed (stream will build state): %s", exc)
+    for sym in UNDERLYINGS:
+        try:
+            for b in _fetch_bars(sd, sym):
+                engine.rolling[sym].update(b.timestamp.astimezone(ET), float(b.close))
+            log.info("seeded %d minute bars for %s", len(engine.rolling[sym]), sym)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("bar seed failed for %s (stream will build state): %s", sym, exc)
 
     from alpaca.data.live import StockDataStream
 
@@ -492,10 +518,14 @@ def main() -> None:
     )
 
     async def on_trade(trade: Any) -> None:
-        engine.on_trade(trade.timestamp, float(trade.price))
+        engine.on_trade(str(trade.symbol), trade.timestamp, float(trade.price))
 
-    stream.subscribe_trades(on_trade, "SPY")
-    log.info("EVENT-DRIVEN: streaming SPY trades until %s", end_pt.strftime("%Y-%m-%d %H:%M %Z"))
+    stream.subscribe_trades(on_trade, *UNDERLYINGS)
+    log.info(
+        "EVENT-DRIVEN: streaming %s trades until %s",
+        ",".join(UNDERLYINGS),
+        end_pt.strftime("%Y-%m-%d %H:%M %Z"),
+    )
 
     import threading
 

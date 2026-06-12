@@ -34,7 +34,7 @@ cat > "$PLIST" <<PLIST
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd ${REPO}/backend &amp;&amp; set -a &amp;&amp; source ../.env &amp;&amp; set +a &amp;&amp; export OPT_END_PT=13:00 OPTIONS_REPORT_PATH=/tmp/spy_options_report.json PYTHONUNBUFFERED=1 &amp;&amp; exec ./.venv/bin/python -m app.options_paper_job</string>
+    <string>cd ${REPO}/backend &amp;&amp; set -a &amp;&amp; source ../.env &amp;&amp; set +a &amp;&amp; export OPT_END_PT=13:00 OPT_UNDERLYINGS="\${OPT_UNDERLYINGS:-SPY}" OPTIONS_REPORT_DIR=/tmp/options_reports PYTHONUNBUFFERED=1 &amp;&amp; exec ./.venv/bin/python -m app.options_paper_job</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

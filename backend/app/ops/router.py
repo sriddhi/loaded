@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from typing import Any
 
 import asyncpg
 from app.ops.metrics import METRICS
 from app.signals.engine import HORIZONS
 from app.signals.job import SYMBOLS
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
@@ -68,3 +71,51 @@ async def overview(request: Request) -> dict[str, Any]:
     async with _pool(request).acquire() as conn:
         snap["insights"] = await _signal_insights(conn)
     return snap
+
+
+# ── Paper-trading reports (written by app.options_paper_job, per-day archive) ──
+
+_REPORT_DIR = os.getenv("OPTIONS_REPORT_DIR", "/tmp/options_reports")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@router.get("/paper/reports")
+async def paper_reports() -> dict[str, Any]:
+    """List archived paper-trading reports (one per market day) with summaries."""
+    out: list[dict[str, Any]] = []
+    if os.path.isdir(_REPORT_DIR):
+        for name in sorted(os.listdir(_REPORT_DIR), reverse=True):
+            if not name.endswith(".json") or name == "latest.json":
+                continue
+            date = name[:-5]
+            if not _DATE_RE.match(date):
+                continue
+            try:
+                with open(os.path.join(_REPORT_DIR, name)) as f:
+                    rep = json.load(f)
+                out.append(
+                    {
+                        "date": date,
+                        "underlyings": rep.get("underlyings", []),
+                        "combined": rep.get("combined", {}),
+                    }
+                )
+            except (OSError, json.JSONDecodeError):
+                continue
+    return {"reports": out}
+
+
+@router.get("/paper/reports/{date}")
+async def paper_report(date: str) -> dict[str, Any]:
+    """Full archived report for one day (YYYY-MM-DD, or 'latest')."""
+    if date != "latest" and not _DATE_RE.match(date):
+        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD or 'latest'")
+    path = os.path.join(_REPORT_DIR, f"{date}.json")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"No report for {date}")
+    try:
+        with open(path) as f:
+            data: dict[str, Any] = json.load(f)
+        return data
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Unreadable report: {exc}") from exc
