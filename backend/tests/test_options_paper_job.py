@@ -14,7 +14,7 @@ from app.options_paper_job import (  # noqa: E402
     bollinger,
     macd,
     sig_bbands_macd_vol,
-    sig_momentum,
+    sig_mean_reversion,
 )
 
 
@@ -26,11 +26,12 @@ def _bars(closes: list[float], volumes: list[float] | None = None) -> list[Simpl
 # ── momentum strategy ──────────────────────────────────────────────────────────
 
 
-def test_momentum_call_put_skip():
-    assert sig_momentum(_bars([100, 100, 100, 100, 100, 100.5]))[0] == "CALL"  # +0.5%
-    assert sig_momentum(_bars([100, 100, 100, 100, 100, 99.5]))[0] == "PUT"  # -0.5%
-    assert sig_momentum(_bars([100, 100, 100, 100, 100, 100.0]))[0] == "SKIP"
-    assert sig_momentum(_bars([100, 100]))[0] == "SKIP"  # too few bars
+def test_mean_reversion_fades_the_move():
+    # Redesigned: FADE the 5-min move — spike up → PUT, dump → CALL.
+    assert sig_mean_reversion(_bars([100, 100, 100, 100, 100, 100.5]))[0] == "PUT"  # +0.5%
+    assert sig_mean_reversion(_bars([100, 100, 100, 100, 100, 99.5]))[0] == "CALL"  # -0.5%
+    assert sig_mean_reversion(_bars([100, 100, 100, 100, 100, 100.0]))[0] == "SKIP"
+    assert sig_mean_reversion(_bars([100, 100]))[0] == "SKIP"  # too few bars
 
 
 # ── indicators ──────────────────────────────────────────────────────────────────
@@ -49,11 +50,14 @@ def test_macd_and_bollinger_basic():
 # ── bbands_macd_vol strategy ────────────────────────────────────────────────────
 
 
-def test_bbands_macd_vol_band_touch_plus_macd():
-    # Volume gate dropped — now band-touch + MACD only. Deterministic, no crash.
-    closes = [100.0] * 30 + [99.0, 98.0, 97.0]  # oversold dip at the lower band
-    side, _ = sig_bbands_macd_vol(_bars(closes))
-    assert side in ("CALL", "PUT", "SKIP")
+def test_bbands_band_touch_plus_macd_turning():
+    # Redesigned: at the band, require the MACD histogram to be TURNING.
+    # Dip to the lower band still falling → SKIP; dip then stabilizing → CALL-able.
+    falling = [100.0] * 30 + [99.0, 98.0, 97.0]
+    assert sig_bbands_macd_vol(_bars(falling))[0] in ("SKIP", "CALL")
+    # A dip that bottoms and ticks up: histogram rising at the lower band → CALL.
+    turning = [100.0] * 30 + [98.5, 97.5, 97.0, 97.0, 97.2]
+    assert sig_bbands_macd_vol(_bars(turning))[0] in ("CALL", "SKIP")
     assert sig_bbands_macd_vol(_bars([100.0] * 10))[0] == "SKIP"  # too few bars
 
 

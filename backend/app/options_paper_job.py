@@ -93,42 +93,55 @@ def bollinger(
 # ── Strategies: bars → ('CALL'|'PUT'|'SKIP', price) ───────────────────────────
 
 
-def sig_momentum(bars: list[Any]) -> tuple[str, float]:
+def sig_mean_reversion(bars: list[Any]) -> tuple[str, float]:
+    """FADE the 5-min move (redesigned from chase-momentum).
+
+    The MU minute-replay showed 5-min moves mean-revert intraday: chasing them was
+    35-49% right. So: a sharp up-move → PUT (expect give-back); a sharp down-move
+    → CALL (expect bounce).
+    """
     closes = [float(b.close) for b in bars]
     if len(closes) < 6:
         return "SKIP", (closes[-1] if closes else 0.0)
     price, ref = closes[-1], closes[-6]
     ret = (price - ref) / ref if ref else 0.0
     if ret >= MOM_THRESHOLD:
-        return "CALL", price
+        return "PUT", price  # fade the spike
     if ret <= -MOM_THRESHOLD:
-        return "PUT", price
+        return "CALL", price  # fade the dump
     return "SKIP", price
 
 
 def sig_bbands_macd_vol(bars: list[Any]) -> tuple[str, float]:
+    """Band-touch + MACD *turning* (redesigned).
+
+    The old rule wanted the histogram already opposite-signed at the band — a
+    near-contradiction that never fired (at the lower band the histogram is
+    almost always negative). New rule: at the band, require the histogram to be
+    TURNING (rising at the lower band, falling at the upper) — reversal starting,
+    not already finished.
+    """
     closes = [float(b.close) for b in bars]
-    if len(closes) < 30:
+    if len(closes) < 31:
         return "SKIP", (closes[-1] if closes else 0.0)
     bb = bollinger(closes)
-    mc = macd(closes)
-    if bb is None or mc is None:
+    mc_now = macd(closes)
+    mc_prev = macd(closes[:-1])
+    if bb is None or mc_now is None or mc_prev is None:
         return "SKIP", closes[-1]
     pos, _bw = bb
-    _macd_line, _signal, hist = mc
+    hist_now, hist_prev = mc_now[2], mc_prev[2]
     price = closes[-1]
-    # Loosened: mean-reversion at the bands confirmed only by the MACD histogram
-    # (the always-on volume gate was too strict and never fired). Band-touch + MACD.
-    if pos <= -0.8 and hist > 0:
-        return "CALL", price
-    if pos >= 0.8 and hist < 0:
-        return "PUT", price
+    if pos <= -0.8 and hist_now > hist_prev:
+        return "CALL", price  # at/below lower band, downside momentum fading
+    if pos >= 0.8 and hist_now < hist_prev:
+        return "PUT", price  # at/above upper band, upside momentum fading
     return "SKIP", price
 
 
 STRATEGIES: list[dict[str, Any]] = [
-    {"name": "momentum", "signal": sig_momentum},
-    {"name": "bbands_macd_vol", "signal": sig_bbands_macd_vol},
+    {"name": "mean_reversion", "signal": sig_mean_reversion},
+    {"name": "bbands_macd_turn", "signal": sig_bbands_macd_vol},
 ]
 
 
