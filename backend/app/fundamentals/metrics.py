@@ -10,6 +10,7 @@ divide cents by 100 before combining with the price.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from app.agents.data import safe_div as _safe_div_untyped
 from app.fundamentals.models import BaseFinancials, EquityFinancials, PeriodType
@@ -61,7 +62,7 @@ def to_ttm(quarterly: list[BaseFinancials]) -> EquityFinancials | None:
         return None
     window = quarterly[:4]
     latest = window[0]
-    fields: dict[str, object] = {
+    fields: dict[str, Any] = {
         "symbol": latest.symbol,
         "asset_class": latest.asset_class,
         "period_type": "ttm",

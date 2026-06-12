@@ -21,6 +21,8 @@ from app.fundamentals.price_cache import InMemoryPriceCache
 from app.fundamentals.refresh import pending_watch_count
 from app.fundamentals.router import router as fundamentals_router
 from app.fundamentals.scheduler import FundamentalsScheduler
+from app.macro.refresh import MacroScheduler
+from app.macro.router import router as macro_router
 from app.marketdata.router import router as marketdata_router
 from app.ops.metrics import METRICS
 from app.ops.router import router as ops_router
@@ -259,22 +261,6 @@ CREATE TABLE IF NOT EXISTS market_quotes (
     updated_at  TIMESTAMPTZ
 );
 
--- ── Macro series ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS macro_series (
-    id       SERIAL PRIMARY KEY,
-    code     TEXT UNIQUE NOT NULL,
-    name     TEXT NOT NULL,
-    category TEXT,
-    source   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS macro_data (
-    time      TIMESTAMPTZ NOT NULL,
-    series_id INTEGER REFERENCES macro_series(id),
-    value     NUMERIC(16,6),
-    PRIMARY KEY (time, series_id)
-);
-
 -- ── News items ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS news_items (
     id              SERIAL PRIMARY KEY,
@@ -500,6 +486,32 @@ ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS reason_1d TEXT;
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS symbol TEXT NOT NULL DEFAULT 'SPY';
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS volume BIGINT;
 CREATE INDEX IF NOT EXISTS idx_spy_signals_symbol_ts ON spy_signals(symbol, ts DESC);
+-- ── Macro module: FRED series + observations ─────────────────────────────────
+-- Drop the legacy (empty, never-referenced) macro_series/macro_data pair so the
+-- FRED schema can claim the name; guarded so it only fires on the legacy shape.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'macro_series' AND column_name = 'id')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'macro_series' AND column_name = 'fetched_at') THEN
+    DROP TABLE IF EXISTS macro_data;
+    DROP TABLE IF EXISTS macro_series;
+  END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS macro_series (
+    code            TEXT PRIMARY KEY,
+    title           TEXT,
+    frequency       TEXT,
+    fetched_at      TIMESTAMPTZ,
+    fred_updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS macro_observations (
+    code  TEXT NOT NULL,
+    date  DATE NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (code, date)
+);
+
 -- Backtest verdicts per horizon (NULL = not yet evaluated). Filled by BacktestJob
 -- once the horizon has elapsed: 'correct' | 'wrong'.
 ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS res_5m TEXT;
@@ -517,7 +529,6 @@ ALTER TABLE spy_signals ADD COLUMN IF NOT EXISTS osc NUMERIC(5,2);
 
 HYPERTABLES_MIGRATIONS = """
 SELECT create_hypertable('market_bars', 'time', if_not_exists => TRUE);
-SELECT create_hypertable('macro_data', 'time', if_not_exists => TRUE);
 SELECT create_hypertable('trading_events', 'time', if_not_exists => TRUE);
 """
 
@@ -709,6 +720,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.strategy_scheduler_task = asyncio.create_task(strategy_scheduler.run())
     print("[startup] Strategy scheduler started.")
 
+    # ── Macro FRED refresher (keeps series in sync with FRED) ─────────────────
+    macro_scheduler = MacroScheduler(pool)
+    app.state.macro_scheduler = macro_scheduler
+    app.state.macro_task = asyncio.create_task(macro_scheduler.run())
+    print("[startup] Macro FRED scheduler started.")
+
     # ── Register jobs in the ops metrics registry (for the Tools tab) ──────────
     if app.state.finnhub_client is not None:
         METRICS.register_job("finnhub_ws", "backend", "running")
@@ -720,6 +737,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.retention_job is not None:
         METRICS.register_job("signal_retention", "backend", "idle")
     METRICS.register_job("strategy_scheduler", "backend", "running")
+    METRICS.register_job("macro_fred_refresh", "backend", "running")
 
     yield
 
@@ -751,6 +769,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.retention_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.retention_task
+    await app.state.macro_scheduler.stop()
+    app.state.macro_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await app.state.macro_task
     await app.state.strategy_scheduler.stop()
     app.state.strategy_scheduler_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -794,6 +816,7 @@ app.include_router(trading_router, prefix="/trading", dependencies=_auth_dep)
 app.include_router(fundamentals_router, dependencies=_auth_dep)
 app.include_router(signals_router, dependencies=_auth_dep)
 app.include_router(ops_router, dependencies=_auth_dep)
+app.include_router(macro_router, dependencies=_auth_dep)
 
 
 @app.middleware("http")

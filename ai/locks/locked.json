@@ -203,6 +203,18 @@
       "sha256": "a6d7d25ac9d3ec4bb1a5144b6b3d474b7a68a3852ee76743956e03799bf2a58d",
       "locked_at": "2026-06-11T15:42:20Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/macro/macro_trackers_generator.md",
+      "sha256": "8a86c04c5762336d56838be17a700fdb4551757fe990f4e9dc5ebacf3f5a55ab",
+      "locked_at": "2026-06-12T21:12:49Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/macro/macro_trackers_evaluator.md",
+      "sha256": "5c0c13ac39435c5a01df9e1d108ea40c25509b79cba1fc76adb9fd6bc2c08b53",
+      "locked_at": "2026-06-12T21:12:49Z",
+      "version": "1.0"
     }
   ]
 }

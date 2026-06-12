@@ -278,6 +278,12 @@ not ad-hoc hex.
   artifact panel; save strategies with per-strategy mode (backtest/signal/paper),
   schedule (manual/once/interval/daily), and run history. Paper mode is
   hard-gated to the Alpaca **paper** account.
+- **Macro** (`/macro`): FRED-sourced trackers (CPI vs Fed funds / wage income /
+  2Y, PPI headline-vs-core, CPI−PPI spread, claims, ECB+bunds) with the SVM
+  alert playbook (11 FRED rules + SPY/IGV/SMH moving-average technicals).
+  Series auto-refresh hourly by frequency TTL (daily 6h / weekly 12h / monthly
+  24h); works keyless via fredgraph.csv, upgrades to the official API when
+  `FRED_API_KEY` is set. Informational only — not financial advice.
 - **Tools** (`/tools`): live job status + API latency/error metrics.
 - **Settings** (`/settings`): per-user prefs (e.g. metric hover explainers),
   persisted via `users.settings` + `PATCH /auth/settings`.

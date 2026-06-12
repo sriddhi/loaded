@@ -3,63 +3,136 @@
   "modules": [
     {
       "name": "agents",
-      "code_globs": ["backend/app/agents/**"],
-      "generator_globs": ["ai/generator/agents/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/agents/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/agents/**"
+      ],
+      "generator_globs": [
+        "ai/generator/agents/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/agents/*_evaluator.md"
+      ]
     },
     {
       "name": "auth",
-      "code_globs": ["backend/app/auth/**"],
-      "generator_globs": ["ai/generator/auth/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/auth/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/auth/**"
+      ],
+      "generator_globs": [
+        "ai/generator/auth/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/auth/*_evaluator.md"
+      ]
     },
     {
       "name": "strategies",
-      "code_globs": ["backend/app/strategies/**"],
-      "generator_globs": ["ai/generator/strategies/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/strategies/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/strategies/**"
+      ],
+      "generator_globs": [
+        "ai/generator/strategies/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/strategies/*_evaluator.md"
+      ]
     },
     {
       "name": "trading",
-      "code_globs": ["backend/app/trading/**"],
-      "generator_globs": ["ai/generator/trading/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/trading/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/trading/**"
+      ],
+      "generator_globs": [
+        "ai/generator/trading/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/trading/*_evaluator.md"
+      ]
     },
     {
       "name": "alpaca",
-      "code_globs": ["backend/app/alpaca/**", "backend/app/alpaca_client.py"],
-      "generator_globs": ["ai/generator/alpaca/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/alpaca/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/alpaca/**",
+        "backend/app/alpaca_client.py"
+      ],
+      "generator_globs": [
+        "ai/generator/alpaca/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/alpaca/*_evaluator.md"
+      ]
     },
     {
       "name": "marketdata",
-      "code_globs": ["backend/app/marketdata/**"],
-      "generator_globs": ["ai/generator/alpaca/marketdata_generator.md"],
-      "evaluator_globs": ["ai/evaluator/alpaca/marketdata_evaluator.md"]
+      "code_globs": [
+        "backend/app/marketdata/**"
+      ],
+      "generator_globs": [
+        "ai/generator/alpaca/marketdata_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/alpaca/marketdata_evaluator.md"
+      ]
     },
     {
       "name": "tooling",
-      "code_globs": ["scripts/**"],
-      "generator_globs": ["ai/generator/tooling/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/tooling/*_evaluator.md"]
+      "code_globs": [
+        "scripts/**"
+      ],
+      "generator_globs": [
+        "ai/generator/tooling/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/tooling/*_evaluator.md"
+      ]
     },
     {
       "name": "fundamentals",
-      "code_globs": ["backend/app/fundamentals/**"],
-      "generator_globs": ["ai/generator/fundamentals/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/fundamentals/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/fundamentals/**"
+      ],
+      "generator_globs": [
+        "ai/generator/fundamentals/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/fundamentals/*_evaluator.md"
+      ]
     },
     {
       "name": "signals",
-      "code_globs": ["backend/app/signals/**"],
-      "generator_globs": ["ai/generator/signals/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/signals/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/signals/**"
+      ],
+      "generator_globs": [
+        "ai/generator/signals/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/signals/*_evaluator.md"
+      ]
     },
     {
       "name": "ops",
-      "code_globs": ["backend/app/ops/**"],
-      "generator_globs": ["ai/generator/ops/*_generator.md"],
-      "evaluator_globs": ["ai/evaluator/ops/*_evaluator.md"]
+      "code_globs": [
+        "backend/app/ops/**"
+      ],
+      "generator_globs": [
+        "ai/generator/ops/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/ops/*_evaluator.md"
+      ]
+    },
+    {
+      "name": "macro",
+      "code_globs": [
+        "backend/app/macro/**"
+      ],
+      "generator_globs": [
+        "ai/generator/macro/*_generator.md"
+      ],
+      "evaluator_globs": [
+        "ai/evaluator/macro/*_evaluator.md"
+      ]
     }
   ],
   "exempt_globs": [
