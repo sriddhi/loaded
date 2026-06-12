@@ -42,10 +42,15 @@ PT = ZoneInfo("America/Los_Angeles")
 ET = ZoneInfo("America/New_York")
 
 REPORT_PATH = os.getenv("OPTIONS_REPORT_PATH", "/app/options_report.json")
-HOLD_MIN = int(os.getenv("OPT_HOLD_MIN", "5"))
+# Time stop (was a blind hold) — the BS grid sweep favored ~45 min for the fade.
+HOLD_MIN = int(os.getenv("OPT_HOLD_MIN", "45"))
 MAX_OPEN = int(os.getenv("OPT_MAX_OPEN", "5"))  # per strategy
-# Raised from 0.0002 → 0.001: a 0.02%/5-min move is noise; demand ~0.1% before acting.
-MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.001"))
+# Option-level exits (fractions of entry premium), from the 8-session sweep:
+# TP +50% / SL −50% / 45m time stop → SPY fade hit 58.8%, avg +16.5%/trade.
+TAKE_PROFIT = float(os.getenv("OPT_TP", "0.5"))
+STOP_LOSS = float(os.getenv("OPT_SL", "0.5"))
+# 0.15% / 5-min exhaustion threshold validated best in the sweep.
+MOM_THRESHOLD = float(os.getenv("OPT_MOM_THRESHOLD", "0.0015"))
 # After a strategy opens, it may not re-enter for this many minutes (stops scalping
 # the same drift every bar).
 REENTRY_COOLDOWN_MIN = int(os.getenv("OPT_REENTRY_COOLDOWN_MIN", "10"))
@@ -203,6 +208,22 @@ def _order(tc: Any, symbol: str, buy: bool) -> Any:
     )
 
 
+def _option_last_price(symbol: str) -> float | None:
+    """Latest traded price for an option contract (for TP/SL checks)."""
+    try:
+        from alpaca.data.historical.option import OptionHistoricalDataClient
+        from alpaca.data.requests import OptionLatestTradeRequest
+
+        oc = OptionHistoricalDataClient(
+            os.getenv("ALPACA_PAPER_API_KEY"), os.getenv("ALPACA_PAPER_SECRET_KEY")
+        )
+        t = oc.get_option_latest_trade(OptionLatestTradeRequest(symbol_or_symbols=symbol))
+        return float(t[symbol].price)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("option quote failed for %s: %s", symbol, exc)
+        return None
+
+
 def _filled_price(tc: Any, order_id: Any, timeout: int = 20) -> float | None:
     end = time.time() + timeout
     while time.time() < end:
@@ -294,10 +315,22 @@ def main() -> None:
     while datetime.now(PT) < end_pt:
         try:
             now = datetime.now(UTC)
-            # 1) close due positions
-            for t in [x for x in open_trades if now >= x["exit_at"]]:
-                close_trade(t)
-                open_trades.remove(t)
+            # 1) exits: option-level take-profit / stop-loss, else the time stop
+            for t in list(open_trades):
+                due = now >= t["exit_at"]
+                px = None if due else _option_last_price(t["contract"])
+                if px is not None and t["entry"] > 0:
+                    ret = px / t["entry"] - 1
+                    if ret >= TAKE_PROFIT:
+                        t["exit_reason"] = "take_profit"
+                        due = True
+                    elif ret <= -STOP_LOSS:
+                        t["exit_reason"] = "stop_loss"
+                        due = True
+                if due:
+                    t.setdefault("exit_reason", "time_stop")
+                    close_trade(t)
+                    open_trades.remove(t)
             # 2) per-strategy decisions while market open
             clk = tc.get_clock()
             if clk.is_open:
