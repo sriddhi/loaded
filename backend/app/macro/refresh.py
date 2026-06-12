@@ -15,7 +15,8 @@ from typing import Any
 
 import asyncpg
 from app.macro.fred import DEFAULT_START, fetch_meta, fetch_observations
-from app.macro.registry import SERIES, TTL_HOURS
+from app.macro.registry import ALERT_INFO, SERIES, TECHNICALS, TTL_HOURS
+from app.macro.signals import evaluate_alerts, evaluate_technicals
 from app.ops.metrics import track_job
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,9 @@ async def refresh_series(pool: asyncpg.Pool, code: str, *, full: bool = False) -
     return len(obs)
 
 
-async def refresh_stale(pool: asyncpg.Pool, *, force: bool = False) -> dict[str, int]:
+async def refresh_stale(
+    pool: asyncpg.Pool, *, force: bool = False, full: bool = False
+) -> dict[str, int]:
     """Refresh every registry series whose TTL elapsed (or all when force)."""
     out: dict[str, int] = {}
     sem = asyncio.Semaphore(4)  # be polite to FRED, but don't serialize 15 pulls
@@ -89,7 +92,7 @@ async def refresh_stale(pool: asyncpg.Pool, *, force: bool = False) -> dict[str,
                 async with pool.acquire() as conn:
                     stale = await series_stale(conn, code)
                 if force or stale:
-                    out[code] = await refresh_series(pool, code)
+                    out[code] = await refresh_series(pool, code, full=full)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[macro] refresh failed for %s: %r", code, exc)
 
@@ -104,6 +107,80 @@ async def load_series(pool: asyncpg.Pool, code: str, limit: int = 600) -> list[d
         limit,
     )
     return [{"date": r["date"].isoformat(), "value": float(r["value"])} for r in reversed(rows)]
+
+
+async def load_all(pool: asyncpg.Pool, limit: int = 600) -> dict[str, list[dict[str, Any]]]:
+    return {code: await load_series(pool, code, limit) for code in SERIES}
+
+
+async def _closes_for_technicals() -> dict[str, list[float]]:
+    from app.fundamentals.outlook import daily_closes
+
+    out: dict[str, list[float]] = {}
+    for spec in TECHNICALS:
+        sym = str(spec["symbol"])
+        try:
+            out[sym] = await asyncio.to_thread(daily_closes, sym, 80)
+        except Exception:  # noqa: BLE001
+            out[sym] = []
+    return out
+
+
+async def update_alert_states(
+    pool: asyncpg.Pool, alerts: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Persist fired-state transitions; `since` marks when the current state began."""
+    out: dict[str, dict[str, Any]] = {}
+    async with pool.acquire() as conn:
+        for a in alerts:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO macro_alert_state (alert_id, fired, since, last_eval)
+                VALUES ($1, $2, NOW(), NOW())
+                ON CONFLICT (alert_id) DO UPDATE SET
+                  since = CASE
+                            WHEN macro_alert_state.fired IS DISTINCT FROM EXCLUDED.fired
+                            THEN NOW() ELSE macro_alert_state.since
+                          END,
+                  fired = EXCLUDED.fired,
+                  last_eval = NOW()
+                RETURNING fired, since
+                """,
+                a["id"],
+                bool(a["fired"]),
+            )
+            if row is not None:
+                out[a["id"]] = {"since": row["since"].isoformat()}
+    return out
+
+
+def _with_as_of(alerts: list[dict[str, Any]], data: dict[str, list[dict[str, Any]]]) -> None:
+    """Stamp each alert with the newest observation date among its input series."""
+    for a in alerts:
+        dates = [data[c][-1]["date"] for c in a["series"] if data.get(c)]
+        a["as_of"] = max(dates) if dates else None
+
+
+async def evaluate_now(
+    pool: asyncpg.Pool,
+    data: dict[str, list[dict[str, Any]]] | None = None,
+    *,
+    include_technicals: bool = True,
+) -> list[dict[str, Any]]:
+    """Single evaluation path: rules + technicals, state persistence, explainers."""
+    if data is None:
+        data = await load_all(pool)
+    alerts: list[dict[str, Any]] = evaluate_alerts(data)
+    if include_technicals:
+        alerts += evaluate_technicals(await _closes_for_technicals())
+    _with_as_of(alerts, data)
+    states = await update_alert_states(pool, alerts)
+    for a in alerts:
+        a["fired_since"] = states.get(a["id"], {}).get("since") if a["fired"] else None
+        info = ALERT_INFO.get(a["id"], {})
+        a["meaning"] = info.get("meaning", "")
+        a["impact"] = info.get("impact", "")
+    return alerts
 
 
 class MacroScheduler:
@@ -123,6 +200,9 @@ class MacroScheduler:
             try:
                 with track_job("macro_fred_refresh", "backend"):
                     refreshed = await refresh_stale(self._pool)
+                    # Evaluate after every tick so fired/cleared timestamps are
+                    # tracked even when nobody has the page open.
+                    await evaluate_now(self._pool)
                 if refreshed:
                     logger.info("[macro] refreshed %d series", len(refreshed))
             except asyncio.CancelledError:

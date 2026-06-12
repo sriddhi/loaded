@@ -5,6 +5,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -25,20 +26,27 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-/** Line chart — one or more series, token-styled grid/axes/tooltip. */
+/** Line chart — one or more series, token-styled grid/axes/tooltip.
+ *  `brush` adds a drag-to-zoom sliding window (client-side only);
+ *  `brushStart` sets how many trailing points are shown initially. */
 export function LineChartView({
   data,
   series,
   xKey = "x",
   height = 160,
   showAxes = false,
+  brush = false,
+  brushStart,
 }: {
   data: Record<string, number | string>[];
   series: Series[];
   xKey?: string;
   height?: number;
   showAxes?: boolean;
+  brush?: boolean;
+  brushStart?: number;
 }): React.JSX.Element {
+  const startIndex = brush && brushStart ? Math.max(0, data.length - brushStart) : undefined;
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
@@ -57,6 +65,17 @@ export function LineChartView({
             dot={false}
           />
         ))}
+        {brush && (
+          <Brush
+            dataKey={xKey}
+            height={20}
+            travellerWidth={8}
+            startIndex={startIndex}
+            stroke={color.borderStrong}
+            fill={color.surface2}
+            tickFormatter={() => ""}
+          />
+        )}
       </LineChart>
     </ResponsiveContainer>
   );

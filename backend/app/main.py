@@ -511,6 +511,13 @@ CREATE TABLE IF NOT EXISTS macro_observations (
     value DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (code, date)
 );
+-- Fired/cleared transitions per alert; `since` = when the current state began.
+CREATE TABLE IF NOT EXISTS macro_alert_state (
+    alert_id  TEXT PRIMARY KEY,
+    fired     BOOLEAN NOT NULL,
+    since     TIMESTAMPTZ NOT NULL,
+    last_eval TIMESTAMPTZ NOT NULL
+);
 
 -- Backtest verdicts per horizon (NULL = not yet evaluated). Filled by BacktestJob
 -- once the horizon has elapsed: 'correct' | 'wrong'.

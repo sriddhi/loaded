@@ -22,8 +22,20 @@ def _client() -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _stub_alerts() -> list[dict]:
+    from app.macro.signals import evaluate_alerts, evaluate_technicals
+
+    stub = evaluate_alerts({}) + evaluate_technicals({})
+    for a in stub:
+        a.update({"as_of": None, "fired_since": None, "meaning": "m", "impact": "i"})
+    return stub
+
+
 def test_trackers_shape():
-    with patch("app.macro.router.load_series", AsyncMock(return_value=[])):
+    with (
+        patch("app.macro.router.load_all", AsyncMock(return_value={})),
+        patch("app.macro.router.evaluate_now", AsyncMock(return_value=_stub_alerts())),
+    ):
         resp = _client().get("/macro/trackers")
     assert resp.status_code == 200
     body = resp.json()
@@ -31,18 +43,19 @@ def test_trackers_shape():
     ids = {t["id"] for t in body["trackers"]}
     assert "cpi_vs_wage_income" in ids and "ecb_and_bunds" in ids
     assert "not financial advice" in body["disclaimer"]
+    # card alerts carry the explainer fields through
+    card = next(t for t in body["trackers"] if t["id"] == "cpi_vs_wage_income")
+    assert all("meaning" in a and "fired_since" in a for a in card["alerts"])
 
 
 def test_alerts_endpoint():
-    with (
-        patch("app.macro.router.load_series", AsyncMock(return_value=[])),
-        patch("app.macro.router._closes_for_technicals", AsyncMock(return_value={})),
-    ):
+    with patch("app.macro.router.evaluate_now", AsyncMock(return_value=_stub_alerts())):
         resp = _client().get("/macro/alerts")
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["alerts"]) >= 14  # 11 FRED rules + 3 technicals
     assert body["fired"] == []  # no data → nothing fired
+    assert all("meaning" in a and "impact" in a and "as_of" in a for a in body["alerts"])
 
 
 def test_series_unknown_404():

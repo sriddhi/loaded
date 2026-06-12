@@ -71,3 +71,34 @@ async def test_refresh_stale_swallows_per_series_errors():
     ):
         out = await r.refresh_stale(pool)
     assert out == {}  # all failed, none raised
+
+
+@pytest.mark.asyncio
+async def test_update_alert_states_records_since():
+    pool, conn = _pool_with_conn()
+    since = datetime(2026, 6, 1, tzinfo=UTC)
+    conn.fetchrow = AsyncMock(return_value={"fired": True, "since": since})
+    alerts = [{"id": "margin_squeeze", "fired": True}]
+    out = await r.update_alert_states(pool, alerts)
+    assert out["margin_squeeze"]["since"] == since.isoformat()
+    sql = conn.fetchrow.await_args.args[0]
+    assert "IS DISTINCT FROM" in sql  # `since` only resets on a state transition
+
+
+@pytest.mark.asyncio
+async def test_evaluate_now_stamps_timing_and_explainers():
+    pool, _ = _pool_with_conn()
+    data = {
+        "DGS2": [{"date": "2026-06-10", "value": 3.0}],  # < 3.5 → fires
+    }
+    states = {"two_year_below_3_5": {"since": "2026-06-01T00:00:00+00:00"}}
+    with patch("app.macro.refresh.update_alert_states", AsyncMock(return_value=states)):
+        alerts = await r.evaluate_now(pool, data, include_technicals=False)
+    a = next(x for x in alerts if x["id"] == "two_year_below_3_5")
+    assert a["fired"] is True
+    assert a["fired_since"] == "2026-06-01T00:00:00+00:00"
+    assert a["as_of"] == "2026-06-10"
+    assert a["meaning"] and a["impact"]
+    # not-fired alerts carry no fired_since but still get explainers
+    b = next(x for x in alerts if x["id"] == "margin_squeeze")
+    assert b["fired_since"] is None and b["meaning"]

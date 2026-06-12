@@ -2,20 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import asyncpg
-from app.macro.refresh import load_series, refresh_stale
-from app.macro.registry import SERIES, TECHNICALS, TRACKERS
-from app.macro.signals import (
-    evaluate_alerts,
-    evaluate_technicals,
-    income_series,
-    rolling_mean,
-    spread,
-    yoy,
-)
+from app.macro.refresh import evaluate_now, load_all, load_series, refresh_stale
+from app.macro.registry import SERIES, TRACKERS
+from app.macro.signals import income_series, rolling_mean, spread, yoy
 from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(prefix="/macro", tags=["macro"])
@@ -26,10 +18,6 @@ DISCLAIMER = "Macro trackers — informational only, not financial advice."
 def _pool(request: Request) -> asyncpg.Pool:
     pool: asyncpg.Pool = request.app.state.pool
     return pool
-
-
-async def _load_all(pool: asyncpg.Pool, limit: int = 600) -> dict[str, list[dict[str, Any]]]:
-    return {code: await load_series(pool, code, limit) for code in SERIES}
 
 
 def _derived(data: dict[str, list[dict[str, Any]]], name: str) -> list[dict[str, Any]]:
@@ -45,25 +33,12 @@ def _derived(data: dict[str, list[dict[str, Any]]], name: str) -> list[dict[str,
     return out
 
 
-async def _closes_for_technicals() -> dict[str, list[float]]:
-    from app.fundamentals.outlook import daily_closes
-
-    out: dict[str, list[float]] = {}
-    for spec in TECHNICALS:
-        sym = spec["symbol"]
-        try:
-            out[sym] = await asyncio.to_thread(daily_closes, sym, 80)
-        except Exception:  # noqa: BLE001
-            out[sym] = []
-    return out
-
-
 @router.get("/trackers")
 async def trackers(request: Request, points: int = Query(160, ge=10, le=600)) -> dict[str, Any]:
     """All tracker cards: raw + derived series (trimmed) + their alert states."""
     pool = _pool(request)
-    data = await _load_all(pool)
-    alerts = {a["id"]: a for a in evaluate_alerts(data)}
+    data = await load_all(pool)
+    alerts = {a["id"]: a for a in await evaluate_now(pool, data, include_technicals=False)}
     cards: list[dict[str, Any]] = []
     for t in TRACKERS:
         series_payload = {code: data.get(code, [])[-points:] for code in t["series"]}
@@ -95,11 +70,8 @@ async def trackers(request: Request, points: int = Query(160, ge=10, le=600)) ->
 
 @router.get("/alerts")
 async def alerts(request: Request) -> dict[str, Any]:
-    """Every alert (FRED rules + technicals) with fired state."""
-    data = await _load_all(_pool(request))
-    fred_alerts = evaluate_alerts(data)
-    tech = evaluate_technicals(await _closes_for_technicals())
-    all_alerts = fred_alerts + tech
+    """Every alert (FRED rules + technicals) with fired state, timing + explainers."""
+    all_alerts = await evaluate_now(_pool(request))
     return {
         "alerts": all_alerts,
         "fired": [a for a in all_alerts if a["fired"]],
@@ -119,7 +91,7 @@ async def series(
 
 
 @router.post("/refresh")
-async def refresh(request: Request) -> dict[str, Any]:
-    """Force-refresh every registry series from FRED now."""
-    refreshed = await refresh_stale(_pool(request), force=True)
+async def refresh(request: Request, full: bool = Query(False)) -> dict[str, Any]:
+    """Force-refresh every registry series from FRED now (full=true re-pulls all history)."""
+    refreshed = await refresh_stale(_pool(request), force=True, full=full)
     return {"refreshed": refreshed, "series": len(refreshed)}

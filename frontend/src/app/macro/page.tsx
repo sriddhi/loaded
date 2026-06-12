@@ -17,6 +17,10 @@ type Alert = {
   fired: boolean;
   value: number | null;
   detail: string;
+  as_of: string | null;
+  fired_since: string | null;
+  meaning: string;
+  impact: string;
 };
 type Tracker = {
   id: string;
@@ -41,6 +45,16 @@ const PATTERN_LABEL: Record<string, string> = {
   technical: "technical",
 };
 
+// "2h ago" / "3d ago" from an ISO timestamp.
+function ago(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${Math.max(m, 1)}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 // Merge multiple {date,value} series into recharts rows keyed by date.
 function mergeSeries(named: Record<string, Point[]>): Record<string, number | string>[] {
   const rows = new Map<string, Record<string, number | string>>();
@@ -54,6 +68,46 @@ function mergeSeries(named: Record<string, Point[]>): Record<string, number | st
   return Array.from(rows.entries())
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([, r]) => r);
+}
+
+function FiredMeta({ a }: { a: Alert }): React.JSX.Element {
+  return (
+    <span style={{ fontSize: 11, color: color.faint, fontFamily: font.mono }}>
+      {a.fired_since ? `fired ${ago(a.fired_since)}` : ""}
+      {a.as_of ? ` · data as of ${a.as_of}` : ""}
+    </span>
+  );
+}
+
+function Explainer({ alerts }: { alerts: Alert[] }): React.JSX.Element | null {
+  const withInfo = alerts.filter((a) => a.meaning || a.impact);
+  if (withInfo.length === 0) return null;
+  return (
+    <details style={{ marginTop: space[2] }}>
+      <summary
+        style={{
+          cursor: "pointer",
+          fontSize: 11,
+          color: color.muted,
+          userSelect: "none",
+        }}
+      >
+        What this alert means
+      </summary>
+      {withInfo.map((a) => (
+        <div key={a.id} style={{ margin: "6px 0 0 2px", fontSize: 12, lineHeight: 1.5 }}>
+          <div style={{ color: color.fg, fontWeight: 600, fontSize: 11 }}>{a.name}</div>
+          <div style={{ color: color.muted }}>{a.meaning}</div>
+          <div style={{ color: color.faint }}>
+            <span style={{ color: a.fired ? color.warn : color.faint, fontWeight: 600 }}>
+              Possible impact:{" "}
+            </span>
+            {a.impact}
+          </div>
+        </div>
+      ))}
+    </details>
+  );
 }
 
 export default function MacroPage(): React.JSX.Element {
@@ -71,7 +125,7 @@ export default function MacroPage(): React.JSX.Element {
   const load = useCallback(async (): Promise<void> => {
     try {
       const [tRes, aRes] = await Promise.all([
-        apiFetch("/macro/trackers"),
+        apiFetch("/macro/trackers?points=600"),
         apiFetch("/macro/alerts"),
       ]);
       setData(tRes.ok ? ((await tRes.json()) as TrackersResp) : null);
@@ -111,7 +165,7 @@ export default function MacroPage(): React.JSX.Element {
           {busy ? "Refreshing…" : "Refresh from FRED"}
         </Button>
       }
-      subtitle="FRED-sourced trackers & the SVM alert playbook — series auto-refresh as FRED updates (daily 6h / weekly 12h / monthly 24h TTLs). Informational only, not financial advice."
+      subtitle="FRED-sourced trackers & the SVM alert playbook — series auto-refresh as FRED updates (daily 6h / weekly 12h / monthly 24h TTLs). Drag the strip under a chart to slide its window. Informational only, not financial advice."
     >
       {error && <div style={{ color: color.down, fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
@@ -135,19 +189,26 @@ export default function MacroPage(): React.JSX.Element {
             No alert rules are currently tripped.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {fired.map((a) => (
-              <div
-                key={a.id}
-                style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}
-              >
-                <Badge tone={color.warn} filled>
-                  {PATTERN_LABEL[a.pattern] ?? a.pattern}
-                </Badge>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
-                <span style={{ fontSize: 12, color: color.muted, fontFamily: font.mono }}>
-                  {a.detail}
-                </span>
+              <div key={a.id}>
+                <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <Badge tone={color.warn} filled>
+                    {PATTERN_LABEL[a.pattern] ?? a.pattern}
+                  </Badge>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
+                  <span style={{ fontSize: 12, color: color.muted, fontFamily: font.mono }}>
+                    {a.detail}
+                  </span>
+                  <FiredMeta a={a} />
+                </div>
+                <div style={{ margin: "4px 0 0 2px", fontSize: 12, lineHeight: 1.5 }}>
+                  <span style={{ color: color.muted }}>{a.meaning} </span>
+                  <span style={{ color: color.faint }}>
+                    <span style={{ color: color.warn, fontWeight: 600 }}>Possible impact: </span>
+                    {a.impact}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -197,8 +258,10 @@ export default function MacroPage(): React.JSX.Element {
                 <LineChartView
                   data={rows}
                   xKey="x"
-                  height={180}
+                  height={200}
                   showAxes
+                  brush
+                  brushStart={160}
                   series={names.map((n, i) => ({
                     key: n,
                     label: n,
@@ -215,9 +278,10 @@ export default function MacroPage(): React.JSX.Element {
                   key={a.id}
                   style={{ fontSize: 11, color: a.fired ? color.warn : color.faint, marginTop: 6 }}
                 >
-                  {a.fired ? "▲" : "·"} {a.name} — {a.detail}
+                  {a.fired ? "▲" : "·"} {a.name} — {a.detail} <FiredMeta a={a} />
                 </div>
               ))}
+              <Explainer alerts={t.alerts} />
             </Card>
           );
         })}

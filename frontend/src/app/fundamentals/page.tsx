@@ -386,13 +386,26 @@ export default function FundamentalsPage(): React.JSX.Element {
           apiFetch(`/fundamentals/${sym}/outlook`),
           apiFetch(`/fundamentals/${sym}/dcf`),
         ]);
-        setStmts(sRes.ok ? ((await sRes.json()) as StatementsResp) : null);
+        // Statements may miss on the very first hit while the backend ingests a
+        // new symbol — retry once before showing an error.
+        let sOk: Response | null = sRes.ok ? sRes : null;
+        let sDetail: string | null = null;
+        if (!sOk) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const retry = await apiFetch(`/fundamentals/${sym}/statements?period=${per}`);
+          if (retry.ok) sOk = retry;
+          else {
+            const body = (await retry.json().catch(() => ({}))) as { detail?: string };
+            sDetail = body.detail ?? `No statements for ${sym}`;
+          }
+        }
+        setStmts(sOk ? ((await sOk.json()) as StatementsResp) : null);
         setMetrics(mRes.ok ? ((await mRes.json()) as MetricsResp) : null);
         setPrice(pRes.ok ? ((await pRes.json()) as PriceResp) : null);
         setForward(fRes.ok ? ((await fRes.json()) as ForwardResp) : null);
         setOutlook(oRes.ok ? ((await oRes.json()) as OutlookResp) : null);
         setDcf(dRes.ok ? ((await dRes.json()) as DcfResp) : null);
-        if (!sRes.ok) setError(`No statements for ${sym}`);
+        if (sDetail) setError(sDetail);
       } catch {
         setError("Failed to load fundamentals.");
       } finally {

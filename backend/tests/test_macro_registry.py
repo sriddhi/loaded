@@ -23,3 +23,14 @@ def test_frequencies_have_ttls():
 def test_technicals_shape():
     for spec in TECHNICALS:
         assert spec["direction"] in ("above", "below") and spec["ma"] > 0
+
+
+def test_alert_info_covers_every_alert():
+    from app.macro.registry import ALERT_INFO
+    from app.macro.signals import evaluate_alerts, evaluate_technicals
+
+    ids = {a["id"] for a in evaluate_alerts({})} | {a["id"] for a in evaluate_technicals({})}
+    missing = ids - set(ALERT_INFO)
+    assert not missing, f"alerts without meaning/impact: {missing}"
+    for info in ALERT_INFO.values():
+        assert info["meaning"] and info["impact"]
