@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
 # Install (or uninstall) a macOS LaunchAgent that auto-starts the SPY 0-2 DTE
-# options PAPER job on Monday mornings before the open. The job itself only
-# trades while the market clock is open and stops at OPT_END_PT.
+# options PAPER job every weekday morning before the open. The job exits
+# immediately on exchange holidays (market-clock guard), only trades while the
+# market is open, and stops at OPT_END_PT.
 #
-#   ./scripts/install_options_paper_agent.sh            # install (Mondays 06:25 PT)
+#   ./scripts/install_options_paper_agent.sh            # install (Mon–Fri 06:25 PT)
 #   ./scripts/install_options_paper_agent.sh --uninstall
 #
 # PAPER ONLY — the job hard-refuses to run without Alpaca paper credentials.
@@ -36,11 +37,13 @@ cat > "$PLIST" <<PLIST
     <string>cd ${REPO}/backend &amp;&amp; set -a &amp;&amp; source ../.env &amp;&amp; set +a &amp;&amp; export OPT_END_PT=13:00 OPTIONS_REPORT_PATH=/tmp/spy_options_report.json PYTHONUNBUFFERED=1 &amp;&amp; exec ./.venv/bin/python -m app.options_paper_job</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Weekday</key><integer>1</integer>
-    <key>Hour</key><integer>6</integer>
-    <key>Minute</key><integer>25</integer>
-  </dict>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+  </array>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>/tmp/spy_options_job.log</string>
   <key>StandardErrorPath</key><string>/tmp/spy_options_job.log</string>
@@ -51,6 +54,6 @@ PLIST
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 echo "Installed + loaded: $PLIST"
-echo "  fires:  Mondays 06:25 America/Los_Angeles (job trades 09:30 ET → 13:00 PT)"
+echo "  fires:  Mon–Fri 06:25 America/Los_Angeles (job trades 09:30 ET → 13:00 PT; exits instantly on holidays)"
 echo "  report: /tmp/spy_options_report.json   log: /tmp/spy_options_job.log"
 echo "  remove: ./scripts/install_options_paper_agent.sh --uninstall"

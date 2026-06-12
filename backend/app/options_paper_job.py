@@ -445,6 +445,21 @@ class EventEngine:
 
 def main() -> None:
     tc, sd = _clients()
+
+    # Holiday/weekend guard: if the market won't open at all today, exit now
+    # instead of idling on the stream until END_PT (the daily agent fires
+    # Mon–Fri regardless of exchange holidays).
+    try:
+        clk = tc.get_clock()
+        if not clk.is_open and clk.next_open.astimezone(ET).date() != datetime.now(ET).date():
+            log.info(
+                "Market is closed today (next open %s) — exiting.",
+                clk.next_open.astimezone(ET).strftime("%Y-%m-%d %H:%M %Z"),
+            )
+            return
+    except Exception as exc:  # noqa: BLE001
+        log.warning("clock check failed at startup (%s) — continuing", exc)
+
     acct = tc.get_account()
     log.info(
         "PAPER account %s · options level %s · buying power %s · strategies: %s",
