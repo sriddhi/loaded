@@ -263,6 +263,30 @@
       "sha256": "91172f9875be82d55de8229e13d67e66716ae8a49cd90d7e06c53fd2947b6bd3",
       "locked_at": "2026-06-12T23:31:40Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/portfolio/portfolio_insights_generator.md",
+      "sha256": "278e442a8e8993eba80d902c58ec41a7333f04cc61fc339a8c254f14d54823f5",
+      "locked_at": "2026-06-13T00:03:09Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/portfolio/portfolio_insights_evaluator.md",
+      "sha256": "450af9f4b030cd4445963c447163846272983ae9e7a14e659d6bdb399a0f9def",
+      "locked_at": "2026-06-13T00:03:09Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/portfolio/portfolio_commentary_generator.md",
+      "sha256": "0daaaf024eabc8739ff92953068e67d1c6ce6f5b648fc1504526af7f597a2264",
+      "locked_at": "2026-06-13T00:03:09Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/portfolio/portfolio_commentary_evaluator.md",
+      "sha256": "68a3049285cabd2e7a21646366ac7728dd412700fb3a5b4cbd2ecbee764e4f1f",
+      "locked_at": "2026-06-13T00:03:09Z",
+      "version": "1.0"
     }
   ]
 }

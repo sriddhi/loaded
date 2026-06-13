@@ -26,7 +26,7 @@ from app.screener.data import (
     refresh_closes,
     stale_statement_symbols,
 )
-from app.screener.scoring import SymbolInputs, score_symbol
+from app.screener.scoring import SymbolInputs, normalize_sector, score_symbol
 from app.screener.universe import refresh_universe, universe_symbols
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,8 @@ async def _load_inputs(pool: asyncpg.Pool, members: list[dict[str, Any]]) -> lis
     fired_rows = await pool.fetch("SELECT alert_id FROM macro_alert_state WHERE fired")
     fired = {r["alert_id"] for r in fired_rows}
 
+    for m in members:
+        m["sector"] = normalize_sector(m.get("sector"))
     # trailing P/E per symbol → sector medians
     pe_by_sector: dict[str, list[float]] = {}
     prices: dict[str, float] = {s: c[-1] for s, c in closes.items() if c}

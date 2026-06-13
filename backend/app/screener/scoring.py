@@ -385,3 +385,21 @@ def score_symbol(inp: SymbolInputs) -> dict[str, Any]:
             "fired_alerts": sorted(inp.get("fired_alert_ids") or set()),
         },
     }
+
+
+# yfinance/Wikipedia sector labels → canonical GICS names (used at read sites).
+_SECTOR_ALIASES: dict[str, str] = {
+    "Technology": "Information Technology",
+    "Financial Services": "Financials",
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Defensive": "Consumer Staples",
+    "Healthcare": "Health Care",
+    "Basic Materials": "Materials",
+    "Telecommunications": "Communication Services",
+}
+
+
+def normalize_sector(sector: str | None) -> str | None:
+    if sector is None:
+        return None
+    return _SECTOR_ALIASES.get(sector, sector)

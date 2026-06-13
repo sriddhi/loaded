@@ -58,6 +58,49 @@ type Perf = {
   beta: number | null;
 };
 
+type Check = {
+  id: string;
+  status: "ok" | "warn" | "flag" | "info";
+  headline: string;
+  detail: string;
+  metric: number | null;
+};
+type Insights = {
+  holdings_signals: {
+    summary: string;
+    items: {
+      symbol: string;
+      weight_pct: number;
+      candidate: string;
+      composite: number | null;
+      reasons: string[];
+    }[];
+  };
+  macro_impacts: {
+    alert_id: string;
+    meaning: string;
+    impact: string;
+    fired_since: string | null;
+    affected: { sector: string; portfolio_weight_pct: number; direction: string }[];
+  }[];
+  upcoming_earnings: {
+    symbol: string;
+    earnings_date: string;
+    hour: string | null;
+    weight_pct: number;
+  }[];
+  health: { diversification_score: number; checks: Check[] };
+};
+type Suggestion = {
+  symbol: string;
+  action: string;
+  suggested_qty: number;
+  est_cost: number;
+  target_weight_pct: number;
+  reason: string;
+};
+type Commentary = { markdown: string; generated_at: string; cached: boolean; version: number };
+
 type Allocation = {
   by_sector: { sector: string; weight_pct: number; value: number }[];
   concentration: { top1_pct: number; top5_pct: number; hhi: number; label: string };
@@ -80,6 +123,11 @@ export default function PortfolioDetailPage(): React.JSX.Element {
   const [alloc, setAlloc] = useState<Allocation | null>(null);
   const [perf, setPerf] = useState<Perf | null>(null);
   const [scores, setScores] = useState<Record<string, Score | null>>({});
+  const [insightsData, setInsightsData] = useState<Insights | null>(null);
+  const [sugs, setSugs] = useState<Suggestion[] | null>(null);
+  const [sugMode, setSugMode] = useState<"score_weighted" | "equal_weight">("score_weighted");
+  const [commentary, setCommentary] = useState<Commentary | null>(null);
+  const [commentaryBusy, setCommentaryBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // tx form state
@@ -119,6 +167,12 @@ export default function PortfolioDetailPage(): React.JSX.Element {
         setScores(m);
       }
       setError(null);
+      const [iRes, cRes] = await Promise.all([
+        apiFetch(`/portfolio/${pid}/insights`),
+        apiFetch(`/portfolio/${pid}/commentary`),
+      ]);
+      setInsightsData(iRes.ok ? ((await iRes.json()) as Insights) : null);
+      setCommentary(cRes.ok ? ((await cRes.json()) as Commentary) : null);
     } catch {
       setError("Failed to load portfolio.");
     }
@@ -177,6 +231,35 @@ export default function PortfolioDetailPage(): React.JSX.Element {
     await load();
   }
 
+  async function loadSuggestions(mode: "score_weighted" | "equal_weight"): Promise<void> {
+    setSugMode(mode);
+    const res = await apiFetch(`/portfolio/${pid}/suggestions`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { suggestions: Suggestion[] };
+      setSugs(body.suggestions);
+    }
+  }
+
+  async function generateCommentary(force: boolean): Promise<void> {
+    setCommentaryBusy(true);
+    try {
+      const res = await apiFetch(`/portfolio/${pid}/commentary`, {
+        method: "POST",
+        body: JSON.stringify({ force }),
+      });
+      if (res.ok) setCommentary((await res.json()) as Commentary);
+      else {
+        const eb = (await res.json().catch(() => ({}))) as { detail?: string };
+        setError(eb.detail ?? "Commentary unavailable");
+      }
+    } finally {
+      setCommentaryBusy(false);
+    }
+  }
+
   if (authLoading || !user) return <main style={{ background: color.bg, minHeight: "100vh" }} />;
 
   const isSynced = detail?.kind === "alpaca_paper";
@@ -205,7 +288,11 @@ export default function PortfolioDetailPage(): React.JSX.Element {
       {error && <div style={{ color: color.down, fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
       <div style={{ marginBottom: space[4] }}>
-        <Tabs options={["Overview", "Holdings", "Transactions"]} value={tab} onChange={setTab} />
+        <Tabs
+          options={["Overview", "Holdings", "Transactions", "Insights"]}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
       {tab === "Overview" && detail && (
@@ -512,6 +599,182 @@ export default function PortfolioDetailPage(): React.JSX.Element {
           ) : (
             <div style={{ color: color.muted, fontSize: 13 }}>No transactions yet.</div>
           )}
+        </>
+      )}
+      {tab === "Insights" && (
+        <>
+          <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+            <SectionTitle
+              right={
+                <Badge tone={color.hue} filled>
+                  {insightsData?.health.diversification_score ?? "—"}/100 diversified
+                </Badge>
+              }
+            >
+              Portfolio health
+            </SectionTitle>
+            {(insightsData?.health.checks ?? []).map((c) => (
+              <div
+                key={c.id}
+                style={{ display: "flex", gap: 10, alignItems: "baseline", marginTop: 6 }}
+              >
+                <Badge
+                  tone={
+                    c.status === "flag"
+                      ? color.down
+                      : c.status === "warn"
+                        ? color.warn
+                        : color.muted
+                  }
+                  filled={c.status === "flag"}
+                >
+                  {c.status}
+                </Badge>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{c.headline}</span>
+                <span style={{ fontSize: 12, color: color.muted }}>{c.detail}</span>
+              </div>
+            ))}
+          </Card>
+
+          <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+            <SectionTitle>Holdings vs screener</SectionTitle>
+            <div style={{ fontSize: 12, color: color.muted, marginBottom: 8 }}>
+              {insightsData?.holdings_signals.summary ?? "…"}
+            </div>
+            {(insightsData?.holdings_signals.items ?? []).map((it) => (
+              <div key={it.symbol} style={{ fontSize: 12, marginTop: 4, fontFamily: font.mono }}>
+                <span style={{ fontWeight: 700 }}>{it.symbol}</span>{" "}
+                <Badge
+                  tone={
+                    it.candidate.includes("buy")
+                      ? color.up
+                      : it.candidate.includes("sell")
+                        ? color.down
+                        : color.muted
+                  }
+                >
+                  {it.candidate.replace("_", " ")}
+                </Badge>{" "}
+                <span style={{ color: color.faint }}>
+                  comp {it.composite ?? "—"} · {it.weight_pct}% of equity
+                </span>
+              </div>
+            ))}
+          </Card>
+
+          {(insightsData?.macro_impacts.length ?? 0) > 0 && (
+            <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+              <SectionTitle>Macro alerts touching your sectors</SectionTitle>
+              {insightsData!.macro_impacts.map((m) => (
+                <div key={m.alert_id} style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {m.alert_id}{" "}
+                    {m.affected.map((a) => (
+                      <Badge
+                        key={a.sector}
+                        tone={a.direction === "tailwind" ? color.up : color.warn}
+                      >
+                        {a.sector} {a.portfolio_weight_pct}% {a.direction}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, color: color.muted, marginTop: 2 }}>{m.meaning}</div>
+                </div>
+              ))}
+            </Card>
+          )}
+
+          {(insightsData?.upcoming_earnings.length ?? 0) > 0 && (
+            <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+              <SectionTitle>Earnings in the next 14 days</SectionTitle>
+              {insightsData!.upcoming_earnings.map((e) => (
+                <div
+                  key={`${e.symbol}-${e.earnings_date}`}
+                  style={{ fontSize: 12, fontFamily: font.mono, marginTop: 4 }}
+                >
+                  {e.earnings_date} · <b>{e.symbol}</b> ({e.weight_pct}% of equity)
+                  {e.hour ? ` · ${e.hour}` : ""}
+                </div>
+              ))}
+            </Card>
+          )}
+
+          <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+            <SectionTitle
+              right={
+                <span style={{ display: "flex", gap: 6 }}>
+                  <Button
+                    variant="ghost"
+                    active={sugMode === "score_weighted"}
+                    onClick={() => void loadSuggestions("score_weighted")}
+                  >
+                    score weighted
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    active={sugMode === "equal_weight"}
+                    onClick={() => void loadSuggestions("equal_weight")}
+                  >
+                    equal weight
+                  </Button>
+                </span>
+              }
+            >
+              Sizing suggestions
+            </SectionTitle>
+            {sugs === null ? (
+              <div style={{ fontSize: 12, color: color.muted }}>
+                Pick a mode to illustrate how available cash could be sized. Educational only.
+              </div>
+            ) : sugs.length === 0 ? (
+              <div style={{ fontSize: 12, color: color.muted }}>
+                No suggestions (no cash available or no ranked candidates).
+              </div>
+            ) : (
+              sugs.map((sg) => (
+                <div key={sg.symbol} style={{ fontSize: 12, fontFamily: font.mono, marginTop: 4 }}>
+                  <Badge tone={sg.action === "new" ? color.hue : color.muted}>{sg.action}</Badge>{" "}
+                  <b>{sg.symbol}</b> {sg.suggested_qty} sh ≈ {usd(sg.est_cost)} →{" "}
+                  {sg.target_weight_pct}%<span style={{ color: color.faint }}> — {sg.reason}</span>
+                </div>
+              ))
+            )}
+          </Card>
+
+          <Card pad={space[4]}>
+            <SectionTitle
+              right={
+                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {commentary?.cached && <Badge>cached</Badge>}
+                  <Button
+                    variant="ghost"
+                    disabled={commentaryBusy}
+                    onClick={() => void generateCommentary(!!commentary)}
+                  >
+                    {commentaryBusy ? "Writing…" : commentary ? "Regenerate" : "Generate"}
+                  </Button>
+                </span>
+              }
+            >
+              AI advisor review
+            </SectionTitle>
+            {commentary ? (
+              <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                {commentary.markdown}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: color.muted }}>
+                Generate a plain-English review of this portfolio (cached daily). Educational only.
+              </div>
+            )}
+            {commentary && (
+              <div
+                style={{ fontSize: 10, color: color.faint, marginTop: 8, fontFamily: font.mono }}
+              >
+                v{commentary.version} · {new Date(commentary.generated_at).toLocaleString()}
+              </div>
+            )}
+          </Card>
         </>
       )}
     </PageShell>

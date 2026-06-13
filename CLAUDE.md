@@ -278,6 +278,18 @@ not ad-hoc hex.
   artifact panel; save strategies with per-strategy mode (backtest/signal/paper),
   schedule (manual/once/interval/daily), and run history. Paper mode is
   hard-gated to the Alpaca **paper** account.
+- **Discover** (`/discover`): nightly composite scoring of the S&P 500 +
+  Nasdaq-100 (~516 names) — value (DCF + sector P/E), quality, growth,
+  momentum, analyst, macro-fit pillars → ranked strong_buy…strong_sell
+  candidates with per-pillar breakdowns and reasons. Coverage-gated labels
+  (insufficient data → hold). `/screener/*` API; admin manual run.
+- **Portfolio** (`/portfolio`): per-user books & records — manual portfolios
+  (transactions → derived avg-cost holdings, realized/unrealized P&L) and a
+  read-only Alpaca-paper synced portfolio; EOD snapshots, daily-chained TWR +
+  beta, allocation/concentration; health checks + diversification score +
+  sizing suggestions; insights (holdings × screener scores × fired macro
+  alerts × upcoming earnings); daily-cached AI advisor commentary via the
+  strategy-chat provider. Never places orders. Not financial advice.
 - **Macro** (`/macro`): FRED-sourced trackers (CPI vs Fed funds / wage income /
   2Y, PPI headline-vs-core, CPI−PPI spread, claims, ECB+bunds) with the SVM
   alert playbook (11 FRED rules + SPY/IGV/SMH moving-average technicals).

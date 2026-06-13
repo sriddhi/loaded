@@ -580,6 +580,181 @@ async def performance(
     }
 
 
+# ── BUILD + INSIGHTS + AI commentary ─────────────────────────────────────────
+
+
+async def _scores_for(conn: asyncpg.Connection, symbols: list[str]) -> dict[str, dict[str, Any]]:
+    if not symbols:
+        return {}
+    rows = await conn.fetch(
+        """
+        SELECT e.symbol, s.composite, s.candidate, s.rank
+        FROM screener_scores s JOIN equities e ON e.id = s.equity_id
+        WHERE e.symbol = ANY($1)
+          AND s.score_date = (SELECT max(score_date) FROM screener_scores)
+        """,
+        symbols,
+    )
+    return {
+        r["symbol"]: {
+            "composite": float(r["composite"]) if r["composite"] is not None else None,
+            "candidate": r["candidate"],
+            "rank": r["rank"],
+        }
+        for r in rows
+    }
+
+
+def _cash_pct(row: Any, valued: list[HoldingOut]) -> float:
+    cash = pdb.dollars(row["cash_cents"])
+    total = sum(h.market_value or h.cost_basis for h in valued) + cash
+    return round(cash / total * 100, 2) if total > 0 else 0.0
+
+
+@router.get("/{pid}/health")
+async def health(
+    pid: int, request: Request, user: Any = Depends(get_current_user)
+) -> dict[str, Any]:
+    from app.portfolio.health import diversification_score, run_health_checks
+
+    async with _pool(request).acquire() as conn:
+        row = await _own(conn, pid, _uid(user))
+        valued = await _valued_holdings(request, conn, pid)
+        scores = await _scores_for(conn, [h.symbol for h in valued])
+    dicts = [h.model_dump() for h in valued]
+    checks: list[dict[str, Any]] = run_health_checks(dicts, _cash_pct(row, valued), scores)
+    score: int = diversification_score(dicts)
+    return {"diversification_score": score, "checks": checks, "disclaimer": DISCLAIMER}
+
+
+@router.post("/{pid}/suggestions")
+async def suggestions(
+    pid: int,
+    request: Request,
+    body: dict[str, Any] | None = None,
+    user: Any = Depends(get_current_user),
+) -> dict[str, Any]:
+    from app.portfolio.health import suggest_allocation
+
+    body = body or {}
+    mode = str(body.get("mode", "score_weighted"))
+    if mode not in ("equal_weight", "score_weighted"):
+        raise HTTPException(status_code=422, detail="mode must be equal_weight|score_weighted")
+    top_n = int(body.get("top_n", 5))
+    pool = _pool(request)
+    async with pool.acquire() as conn:
+        row = await _own(conn, pid, _uid(user))
+        valued = await _valued_holdings(request, conn, pid)
+        cands = await conn.fetch(
+            """
+            SELECT e.symbol, s.composite, s.candidate, s.price_cents
+            FROM screener_scores s JOIN equities e ON e.id = s.equity_id
+            WHERE s.score_date = (SELECT max(score_date) FROM screener_scores)
+              AND s.candidate IN ('strong_buy', 'buy')
+            ORDER BY s.rank ASC NULLS LAST LIMIT 40
+            """
+        )
+    cash = float(body.get("cash", pdb.dollars(row["cash_cents"])))
+    candidates = [
+        {
+            "symbol": c["symbol"],
+            "composite": float(c["composite"]) if c["composite"] is not None else 0.0,
+            "candidate": c["candidate"],
+            "price": (c["price_cents"] or 0) / 100 if c["price_cents"] else None,
+        }
+        for c in cands
+    ]
+    result: list[dict[str, Any]] = suggest_allocation(
+        cash, mode, [h.model_dump() for h in valued], candidates, top_n=top_n
+    )
+    return {
+        "suggestions": result,
+        "mode": mode,
+        "cash_used": cash,
+        "note": "Educational sizing illustration — not a recommendation.",
+        "disclaimer": DISCLAIMER,
+    }
+
+
+@router.get("/{pid}/insights")
+async def insights(
+    pid: int, request: Request, user: Any = Depends(get_current_user)
+) -> dict[str, Any]:
+    from app.portfolio.insights import build_insights
+
+    pool = _pool(request)
+    async with pool.acquire() as conn:
+        row = await _own(conn, pid, _uid(user))
+        valued = await _valued_holdings(request, conn, pid)
+    payload: dict[str, Any] = await build_insights(
+        pool, [h.model_dump() for h in valued], _cash_pct(row, valued)
+    )
+    payload["disclaimer"] = DISCLAIMER
+    return payload
+
+
+async def _commentary_context(
+    request: Request, pool: asyncpg.Pool, row: Any, pid: int, user: Any
+) -> dict[str, Any]:
+    from app.portfolio.commentary import build_context
+    from app.portfolio.insights import build_insights
+
+    async with pool.acquire() as conn:
+        valued = await _valued_holdings(request, conn, pid)
+    dicts = [h.model_dump() for h in valued]
+    insights_payload: dict[str, Any] = await build_insights(pool, dicts, _cash_pct(row, valued))
+    perf: dict[str, Any] | None = None
+    try:
+        perf = await performance(pid, request, range="3m", user=user)
+    except Exception:  # noqa: BLE001 — commentary works without performance
+        perf = None
+    equity = sum(h.market_value or h.cost_basis for h in valued)
+    portfolio_info = {
+        "name": row["name"],
+        "kind": row["kind"],
+        "total_value": round(equity + pdb.dollars(row["cash_cents"]), 2),
+        "cash": pdb.dollars(row["cash_cents"]),
+    }
+    ctx: dict[str, Any] = build_context(portfolio_info, dicts, insights_payload, perf)
+    return ctx
+
+
+@router.get("/{pid}/commentary")
+async def get_commentary(
+    pid: int, request: Request, user: Any = Depends(get_current_user)
+) -> dict[str, Any]:
+    from app.portfolio.commentary import get_cached
+
+    pool = _pool(request)
+    async with pool.acquire() as conn:
+        await _own(conn, pid, _uid(user))
+    cached: dict[str, Any] | None = await get_cached(pool, _uid(user), pid)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="no commentary yet")
+    return {**cached, "portfolio_id": pid, "cached": True, "disclaimer": DISCLAIMER}
+
+
+@router.post("/{pid}/commentary")
+async def post_commentary(
+    pid: int,
+    request: Request,
+    body: dict[str, Any] | None = None,
+    user: Any = Depends(get_current_user),
+) -> dict[str, Any]:
+    from app.portfolio.commentary import CommentaryUnavailableError, generate
+
+    force = bool((body or {}).get("force", False))
+    pool = _pool(request)
+    async with pool.acquire() as conn:
+        row = await _own(conn, pid, _uid(user))
+    ctx = await _commentary_context(request, pool, row, pid, user)
+    try:
+        result: dict[str, Any] = await generate(pool, _uid(user), pid, ctx, force=force)
+    except CommentaryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {**result, "portfolio_id": pid, "disclaimer": DISCLAIMER}
+
+
 # ── Alpaca paper sync ────────────────────────────────────────────────────────
 
 
