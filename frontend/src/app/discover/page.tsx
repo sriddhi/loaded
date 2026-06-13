@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
-import { Badge, Button, Card, PageShell, SectionTitle } from "../../components/ui";
+import { Badge, Button, Card, InfoTip, PageShell, SectionTitle } from "../../components/ui";
 import { color, font, space } from "../../theme/tokens";
 
 type Pillars = {
@@ -66,6 +66,39 @@ const PILLAR_LABEL: Record<string, string> = {
   macro_fit: "MAC",
 };
 
+// Column explainers (hover/tap) + the API sort key each header maps to.
+const PILLAR_TIP: Record<string, string> = {
+  value:
+    "Value (0–100): is the price low vs what the business earns? Blends a conservative DCF (intrinsic value from cash flows) with P/E vs the sector median. Higher = cheaper.",
+  quality:
+    "Quality (0–100): how good is the business? Return on equity, profit margins, debt load and liquidity, banded and averaged. Higher = stronger.",
+  growth:
+    "Growth (0–100): 3-year revenue and EPS growth rates. ~10%/yr scores 70; 25%+ scores 100; shrinking scores low.",
+  momentum:
+    "Momentum (0–100): price vs its 50/200-day averages, RSI, and 3/6-month returns. Higher = stronger recent trend.",
+  analyst:
+    "Analyst (0–100): Wall Street consensus — average price-target upside and buy/sell ratings. Thin coverage (<5 analysts) is shrunk toward neutral.",
+  macro_fit:
+    "Macro fit (0–100): does the current macro backdrop help or hurt this stock's sector? Fired macro alerts tilt sector scores up or down from a neutral 50.",
+};
+const TIP_COMP =
+  "Composite (0–100): the weighted blend of all six pillars (value 25%, quality 20%, growth/momentum/analyst 15% each, macro 10%). Rank #1 = highest composite.";
+const TIP_CANDIDATE =
+  "The label ladder: strong buy ≥75 (needs strong value AND quality), buy ≥60, hold in between, sell <40, strong sell <25. Low data coverage forces 'hold' — never a call on thin data.";
+const TIP_COV =
+  "Coverage: how much of the score is backed by data. 100% = all six pillars computed; 25% = only momentum + macro available. Below 50% the label is forced to 'hold'.";
+const SORT_KEY: Record<string, string | null> = {
+  "#": "rank",
+  Comp: "composite",
+  VAL: "value_score",
+  QLT: "quality_score",
+  GRW: "growth_score",
+  MOM: "momentum_score",
+  ANL: "analyst_score",
+  MAC: "macro_fit_score",
+  Cov: "coverage",
+};
+
 function candidateTone(c: string): string {
   if (c === "strong_buy") return color.up;
   if (c === "buy") return color.hue;
@@ -101,6 +134,8 @@ export default function DiscoverPage(): React.JSX.Element {
   const [sector, setSector] = useState("");
   const [candidate, setCandidate] = useState("");
   const [offset, setOffset] = useState(0);
+  const [sort, setSort] = useState("rank");
+  const [dir, setDir] = useState<"asc" | "desc">("asc");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,8 +150,8 @@ export default function DiscoverPage(): React.JSX.Element {
       const qs = new URLSearchParams({
         limit: String(limit),
         offset: String(offset),
-        sort: "rank",
-        dir: "asc",
+        sort,
+        dir,
       });
       if (sector) qs.set("sector", sector);
       if (candidate) qs.set("candidate", candidate);
@@ -130,7 +165,7 @@ export default function DiscoverPage(): React.JSX.Element {
     } catch {
       setError("Failed to load screener data.");
     }
-  }, [sector, candidate, offset]);
+  }, [sector, candidate, offset, sort, dir]);
 
   useEffect(() => {
     void load();
@@ -151,6 +186,61 @@ export default function DiscoverPage(): React.JSX.Element {
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleSort(label: string): void {
+    const key = SORT_KEY[label];
+    if (!key) return;
+    if (sort === key) setDir(dir === "asc" ? "desc" : "asc");
+    else {
+      setSort(key);
+      // rank reads best ascending; raw scores read best descending
+      setDir(key === "rank" ? "asc" : "desc");
+    }
+    setOffset(0);
+  }
+
+  function SortableTh({
+    label,
+    tip,
+    align = "left",
+  }: {
+    label: string;
+    tip?: string;
+    align?: "left" | "right";
+  }): React.JSX.Element {
+    const key = SORT_KEY[label];
+    const active = key !== undefined && key !== null && sort === key;
+    const inner = (
+      <span
+        style={{
+          borderBottom: tip ? `1px dotted ${color.faint}` : undefined,
+          color: active ? color.fg : undefined,
+        }}
+      >
+        {label}
+        {key ? (
+          <span style={{ marginLeft: 3, fontSize: 8, color: active ? color.hue : color.faint }}>
+            {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        ) : null}
+      </span>
+    );
+    return (
+      <th
+        onClick={() => toggleSort(label)}
+        style={{
+          padding: 6,
+          textAlign: align,
+          fontSize: label.length === 3 ? 10 : undefined,
+          cursor: key ? "pointer" : "default",
+          userSelect: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {tip ? <InfoTip text={tip}>{inner}</InfoTip> : inner}
+      </th>
+    );
   }
 
   if (authLoading || !user) return <main style={{ background: color.bg, minHeight: "100vh" }} />;
@@ -244,16 +334,21 @@ export default function DiscoverPage(): React.JSX.Element {
             >
               <thead>
                 <tr style={{ color: color.muted, textAlign: "left" }}>
-                  <th style={{ padding: 6 }}>#</th>
+                  <SortableTh
+                    label="#"
+                    tip="Rank by composite score — #1 is the highest-scoring name today."
+                  />
                   <th style={{ padding: 6 }}>Symbol</th>
-                  <th style={{ padding: 6, textAlign: "right" }}>Comp</th>
+                  <SortableTh label="Comp" tip={TIP_COMP} align="right" />
                   {PILLAR_KEYS.map((k) => (
-                    <th key={k} style={{ padding: 6, fontSize: 10 }}>
-                      {PILLAR_LABEL[k]}
-                    </th>
+                    <SortableTh key={k} label={PILLAR_LABEL[k]} tip={PILLAR_TIP[k]} />
                   ))}
-                  <th style={{ padding: 6 }}>Candidate</th>
-                  <th style={{ padding: 6, textAlign: "right" }}>Cov</th>
+                  <th style={{ padding: 6 }}>
+                    <InfoTip text={TIP_CANDIDATE}>
+                      <span style={{ borderBottom: `1px dotted ${color.faint}` }}>Candidate</span>
+                    </InfoTip>
+                  </th>
+                  <SortableTh label="Cov" tip={TIP_COV} align="right" />
                   <th style={{ padding: 6, textAlign: "right" }}>Price</th>
                 </tr>
               </thead>

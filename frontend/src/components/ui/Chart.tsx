@@ -7,6 +7,7 @@ import {
   BarChart,
   Brush,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -77,6 +78,58 @@ export function LineChartView({
           />
         )}
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Price line + volume bars on twin axes — the classic intraday view. */
+export function PriceVolumeChart({
+  data,
+  xKey = "x",
+  priceKey = "price",
+  volumeKey = "volume",
+  height = 200,
+}: {
+  data: Record<string, number | string>[];
+  xKey?: string;
+  priceKey?: string;
+  volumeKey?: string;
+  height?: number;
+}): React.JSX.Element {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke={color.border} strokeDasharray="2 4" vertical={false} />
+        <XAxis dataKey={xKey} tick={axisStyle} stroke={color.border} minTickGap={40} />
+        <YAxis
+          yAxisId="price"
+          orientation="right"
+          tick={axisStyle}
+          stroke={color.border}
+          domain={["auto", "auto"]}
+          width={56}
+        />
+        <YAxis yAxisId="volume" hide domain={[0, (max: number) => max * 4]} />
+        <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: color.muted }} />
+        <Bar
+          yAxisId="volume"
+          dataKey={volumeKey}
+          name="Volume"
+          fill={color.borderStrong}
+          radius={[2, 2, 0, 0]}
+          isAnimationActive={false}
+        />
+        <Line
+          yAxisId="price"
+          type="monotone"
+          dataKey={priceKey}
+          name="Price"
+          stroke={color.hue}
+          strokeWidth={1.8}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

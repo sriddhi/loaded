@@ -219,7 +219,7 @@ export default function MacroPage(): React.JSX.Element {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(480px, 100%), 1fr))",
           gap: space[4],
         }}
       >

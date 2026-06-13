@@ -124,6 +124,7 @@ export default function ToolsPage(): React.JSX.Element {
         padding: "32px 28px",
         fontFamily: "inherit",
         maxWidth: 980,
+        margin: "0 auto",
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 4 }}>

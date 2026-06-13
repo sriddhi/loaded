@@ -4,13 +4,15 @@ export default function Home(): React.JSX.Element {
   return (
     <main
       style={{
-        height: "100vh",
+        height: "100dvh",
+        overflowY: "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         gap: "12px",
         userSelect: "none",
+        padding: "24px 16px",
       }}
     >
       {/* Wordmark */}
@@ -40,7 +42,15 @@ export default function Home(): React.JSX.Element {
       </p>
 
       {/* Nav */}
-      <nav style={{ display: "flex", gap: 20, marginTop: 24 }}>
+      <nav
+        style={{
+          display: "flex",
+          gap: "14px 20px",
+          marginTop: 24,
+          flexWrap: "wrap",
+          justifyContent: "center",
+        }}
+      >
         {[
           { href: "/fundamentals", label: "Fundamentals" },
           { href: "/signals", label: "Signals" },

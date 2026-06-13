@@ -271,7 +271,9 @@ export default function PortfolioDetailPage(): React.JSX.Element {
     padding: "7px 10px",
     fontSize: 13,
     fontFamily: font.mono,
-    width: 110,
+    flex: "1 1 110px",
+    minWidth: 90,
+    maxWidth: 180,
   };
 
   return (

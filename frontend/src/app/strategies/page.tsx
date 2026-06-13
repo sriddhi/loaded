@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useIsMobile } from "../../components/ui";
 import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useAuth } from "../../context/AuthContext";
@@ -181,6 +182,7 @@ function BacktestView({ data }: { data: Record<string, unknown> }): React.JSX.El
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function StrategiesPage(): React.JSX.Element {
+  const isMobile = useIsMobile();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -349,7 +351,7 @@ export default function StrategiesPage(): React.JSX.Element {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
           gap: 16,
           flex: 1,
           minHeight: 0,

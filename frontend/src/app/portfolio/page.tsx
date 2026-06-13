@@ -166,7 +166,7 @@ export default function PortfolioListPage(): React.JSX.Element {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
             gap: space[4],
           }}
         >

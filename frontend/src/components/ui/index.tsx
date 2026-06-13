@@ -6,7 +6,8 @@ import { color, radius, space, text } from "../../theme/tokens";
 export { useIsMobile } from "./useIsMobile";
 
 // ── InfoTip ───────────────────────────────────────────────────────────────────
-// A small hover popover that explains its child. Used for metric definitions.
+// A small popover that explains its child. Hover on desktop; tap/focus on touch
+// and keyboard (so explanations work on mobile too).
 export function InfoTip({
   text: tip,
   children,
@@ -19,9 +20,18 @@ export function InfoTip({
   const [show, setShow] = useState(false);
   return (
     <span
+      role="button"
+      tabIndex={0}
+      aria-label={tip}
       style={{ position: "relative", cursor: "help", display: "inline-flex", alignItems: "center" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
+      onClick={() => setShow((s) => !s)}
+      onFocus={() => setShow(true)}
+      onBlur={() => setShow(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setShow(false);
+      }}
     >
       {children}
       {show && (
@@ -75,7 +85,7 @@ export function PageShell({
   return (
     <main
       style={{
-        height: "100vh",
+        height: "100dvh",
         overflowY: "auto",
         background: color.bg,
         color: color.fg,
