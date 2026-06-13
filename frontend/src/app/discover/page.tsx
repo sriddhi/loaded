@@ -312,7 +312,11 @@ export default function DiscoverPage(): React.JSX.Element {
         </div>
       </Card>
 
-      {!page || page.items.length === 0 ? (
+      {page === null ? (
+        <Card pad={space[5]}>
+          <div style={{ color: color.muted, fontSize: 13 }}>Loading scores…</div>
+        </Card>
+      ) : page.items.length === 0 ? (
         <Card pad={space[5]}>
           <SectionTitle>No scores yet</SectionTitle>
           <div style={{ color: color.muted, fontSize: 13 }}>

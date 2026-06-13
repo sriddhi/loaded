@@ -220,6 +220,12 @@ def oscillator(prices: list[float], period: int = _RSI_PERIOD) -> float | None:
     for i in range(period, len(deltas)):
         avg_gain = (avg_gain * (period - 1) + gains[i]) / period
         avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    # Flat-tape guard: when the whole RSI window has no real movement (e.g. an
+    # after-hours tape repeating the last tick), read neutral instead of letting
+    # a residual smoothed gain/loss pin the gauge at 100/0.
+    eps = abs(prices[-1]) * 1e-5
+    if all(abs(d) <= eps for d in deltas[-period:]):
+        return 50.0
     if avg_loss == 0:
         return 100.0 if avg_gain > 0 else 50.0
     rs = avg_gain / avg_loss

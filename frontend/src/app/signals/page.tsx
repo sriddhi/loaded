@@ -207,14 +207,14 @@ function SignalBadge({ s }: { s: HorizonSignal }): React.JSX.Element {
       <div style={{ color: c, fontSize: 22, fontWeight: 800, marginTop: 6 }}>
         {LABEL_TEXT[s.label] ?? s.label}
       </div>
-      <div style={{ color: color.faint, fontSize: 11, marginTop: 4 }}>
-        confidence {(s.confidence * 100).toFixed(0)}%
-      </div>
       {s.reason && (
-        <div style={{ color: color.muted, fontSize: 11, marginTop: 10, lineHeight: 1.4 }}>
+        <div style={{ color: color.muted, fontSize: 11, marginTop: 8, lineHeight: 1.45 }}>
           {s.reason}
         </div>
       )}
+      <div style={{ color: color.faint, fontSize: 11, marginTop: 10 }}>
+        score: confidence {(s.confidence * 100).toFixed(0)}%
+      </div>
     </Card>
   );
 }
@@ -485,7 +485,7 @@ export default function SignalsPage(): React.JSX.Element {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
+                  gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
                   gap: space[3],
                   marginBottom: space[2],
                 }}

@@ -127,3 +127,14 @@ def test_compute_all_covers_all_horizons_with_reasons():
         assert label in {"bullish", "bearish", "bull_trap", "bear_trap", "neutral"}
         assert 0.0 <= conf <= 1.0
         assert reason
+
+
+def test_oscillator_flat_after_hours_reads_neutral():
+    """A rally that fades into a flat tape must decay to neutral, not pin at 100."""
+    from app.signals.engine import oscillator
+
+    rally_then_flat = [100 + i for i in range(15)] + [114.0] * 60
+    osc = oscillator(rally_then_flat)
+    assert osc == 50.0
+    # An ongoing rally still reads overbought.
+    assert (oscillator([100 + i for i in range(20)]) or 0) >= 99.0

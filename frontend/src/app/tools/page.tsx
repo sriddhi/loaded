@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { TopNav } from "../../components/ui";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
@@ -121,12 +122,13 @@ export default function ToolsPage(): React.JSX.Element {
         color: "#ededed",
         height: "100vh",
         overflowY: "auto",
-        padding: "32px 28px",
+        padding: "0 28px 32px",
         fontFamily: "inherit",
         maxWidth: 980,
         margin: "0 auto",
       }}
     >
+      <TopNav />
       <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 4 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>Tools</h1>
         {data && (

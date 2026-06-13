@@ -82,7 +82,7 @@ function TallyCards({ t }: { t: Tally }): React.JSX.Element {
 export default function PaperPage(): React.JSX.Element {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [days, setDays] = useState<ReportListItem[]>([]);
+  const [days, setDays] = useState<ReportListItem[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +96,7 @@ export default function PaperPage(): React.JSX.Element {
       const res = await apiFetch("/ops/paper/reports");
       if (!res.ok) {
         setError(`Failed to list reports (${res.status}).`);
+        setDays([]);
         return;
       }
       const list = ((await res.json()) as { reports: ReportListItem[] }).reports;
@@ -104,6 +105,7 @@ export default function PaperPage(): React.JSX.Element {
       setError(null);
     } catch {
       setError("Failed to list reports.");
+      setDays([]);
     }
   }, []);
 
@@ -136,7 +138,9 @@ export default function PaperPage(): React.JSX.Element {
     >
       {error && <div style={{ color: color.down, fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
-      {days.length === 0 ? (
+      {days === null ? (
+        <div style={{ color: "#8a8a8a", fontSize: 13 }}>Loading reports…</div>
+      ) : days.length === 0 ? (
         <Card pad={space[5]}>
           <div style={{ color: color.muted, fontSize: 14, lineHeight: 1.6 }}>
             No paper-trading reports yet. The job runs every market day from the 9:30 ET open until

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useIsMobile } from "../../components/ui";
+import { TopNav, useIsMobile } from "../../components/ui";
 import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useAuth } from "../../context/AuthContext";
@@ -337,10 +337,11 @@ export default function StrategiesPage(): React.JSX.Element {
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        padding: "20px 24px",
+        padding: "0 24px 20px",
         boxSizing: "border-box",
       }}
     >
+      <TopNav />
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 2 }}>Strategy Lab</h1>
       <p style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
         Chat to explore the market and build strategies. Save them, schedule runs, backtest, and
