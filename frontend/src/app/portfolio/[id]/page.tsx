@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "../../../context/AuthContext";
 import { apiFetch } from "../../../lib/api";
 import { Badge, Button, Card, PageShell, SectionTitle, Stat, Tabs } from "../../../components/ui";
-import { BarChartView } from "../../../components/ui/Chart";
+import { BarChartView, LineChartView } from "../../../components/ui/Chart";
 import { color, font, space } from "../../../theme/tokens";
 
 type Holding = {
@@ -21,6 +21,7 @@ type Holding = {
   unrealized_pct: number | null;
   weight_pct: number | null;
   realized_pnl: number;
+  score?: Score | null;
 };
 
 type Detail = {
@@ -48,6 +49,15 @@ type Tx = {
   source: string;
 };
 
+type Score = { composite: number | null; candidate: string; rank: number | null };
+
+type Perf = {
+  series: { date: string; total_value: number; twr_index: number }[];
+  twr_pct: number | null;
+  simple_return_pct: number | null;
+  beta: number | null;
+};
+
 type Allocation = {
   by_sector: { sector: string; weight_pct: number; value: number }[];
   concentration: { top1_pct: number; top5_pct: number; hhi: number; label: string };
@@ -68,6 +78,8 @@ export default function PortfolioDetailPage(): React.JSX.Element {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [txs, setTxs] = useState<Tx[] | null>(null);
   const [alloc, setAlloc] = useState<Allocation | null>(null);
+  const [perf, setPerf] = useState<Perf | null>(null);
+  const [scores, setScores] = useState<Record<string, Score | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // tx form state
@@ -85,10 +97,12 @@ export default function PortfolioDetailPage(): React.JSX.Element {
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      const [dRes, tRes, aRes] = await Promise.all([
+      const [dRes, tRes, aRes, pRes, hRes] = await Promise.all([
         apiFetch(`/portfolio/${pid}`),
         apiFetch(`/portfolio/${pid}/transactions?limit=100`),
         apiFetch(`/portfolio/${pid}/allocation`),
+        apiFetch(`/portfolio/${pid}/performance?range=3m`),
+        apiFetch(`/portfolio/${pid}/holdings`),
       ]);
       if (!dRes.ok) {
         setError(dRes.status === 404 ? "Portfolio not found." : `Load failed (${dRes.status}).`);
@@ -97,6 +111,13 @@ export default function PortfolioDetailPage(): React.JSX.Element {
       setDetail((await dRes.json()) as Detail);
       setTxs(tRes.ok ? ((await tRes.json()) as { items: Tx[] }).items : []);
       setAlloc(aRes.ok ? ((await aRes.json()) as Allocation) : null);
+      setPerf(pRes.ok ? ((await pRes.json()) as Perf) : null);
+      if (hRes.ok) {
+        const hb = (await hRes.json()) as { holdings: (Holding & { score?: Score | null })[] };
+        const m: Record<string, Score | null> = {};
+        for (const h of hb.holdings) m[h.symbol] = h.score ?? null;
+        setScores(m);
+      }
       setError(null);
     } catch {
       setError("Failed to load portfolio.");
@@ -206,6 +227,30 @@ export default function PortfolioDetailPage(): React.JSX.Element {
               />
             </div>
           </Card>
+          {perf && perf.series.length > 1 && (
+            <Card pad={space[4]} style={{ marginBottom: space[4] }}>
+              <SectionTitle
+                right={
+                  <span style={{ display: "flex", gap: 6 }}>
+                    {perf.twr_pct != null && (
+                      <Badge tone={perf.twr_pct >= 0 ? color.up : color.down}>
+                        TWR {perf.twr_pct}%
+                      </Badge>
+                    )}
+                    {perf.beta != null && <Badge>beta {perf.beta}</Badge>}
+                  </span>
+                }
+              >
+                Performance (3m)
+              </SectionTitle>
+              <LineChartView
+                height={180}
+                showAxes
+                data={perf.series.map((s2) => ({ x: s2.date.slice(5), value: s2.total_value }))}
+                series={[{ key: "value", label: "Total value" }]}
+              />
+            </Card>
+          )}
           {alloc && alloc.by_sector.length > 0 && (
             <Card pad={space[4]}>
               <SectionTitle
@@ -262,6 +307,21 @@ export default function PortfolioDetailPage(): React.JSX.Element {
                         <span style={{ color: color.faint, marginLeft: 8, fontSize: 10 }}>
                           {h.sector ?? ""}
                         </span>
+                        {scores[h.symbol] && (
+                          <span style={{ marginLeft: 8 }}>
+                            <Badge
+                              tone={
+                                scores[h.symbol]!.candidate.includes("buy")
+                                  ? color.up
+                                  : scores[h.symbol]!.candidate.includes("sell")
+                                    ? color.down
+                                    : color.muted
+                              }
+                            >
+                              {scores[h.symbol]!.candidate.replace("_", " ")}
+                            </Badge>
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: 6, textAlign: "right" }}>{h.qty}</td>
                       <td style={{ padding: 6, textAlign: "right" }}>{usd(h.avg_cost)}</td>

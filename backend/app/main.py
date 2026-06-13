@@ -27,6 +27,9 @@ from app.marketdata.router import router as marketdata_router
 from app.ops.metrics import METRICS
 from app.ops.router import router as ops_router
 from app.portfolio.router import router as portfolio_router
+from app.portfolio.snapshots import PortfolioSnapshotScheduler
+from app.screener.job import ScreenerScheduler
+from app.screener.router import router as screener_router
 from app.signals.backtest import BacktestJob
 from app.signals.job import SpySignalJob, signals_enabled
 from app.signals.retention import RetentionJob
@@ -569,6 +572,43 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     PRIMARY KEY (portfolio_id, symbol)
 );
 
+-- ── Screener module: universe + nightly composite scores (DISCOVER) ─────────
+CREATE TABLE IF NOT EXISTS universe_members (
+    equity_id  INTEGER NOT NULL REFERENCES equities(id),
+    universe   TEXT NOT NULL,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen DATE NOT NULL DEFAULT CURRENT_DATE,
+    last_seen  DATE NOT NULL DEFAULT CURRENT_DATE,
+    PRIMARY KEY (equity_id, universe)
+);
+
+CREATE TABLE IF NOT EXISTS screener_scores (
+    id              SERIAL PRIMARY KEY,
+    equity_id       INTEGER NOT NULL REFERENCES equities(id),
+    score_date      DATE NOT NULL,
+    composite       NUMERIC(5,1),
+    value_score     NUMERIC(5,1),
+    quality_score   NUMERIC(5,1),
+    growth_score    NUMERIC(5,1),
+    momentum_score  NUMERIC(5,1),
+    analyst_score   NUMERIC(5,1),
+    macro_fit_score NUMERIC(5,1),
+    coverage        NUMERIC(4,3) NOT NULL,
+    candidate       TEXT NOT NULL,
+    rank            INTEGER,
+    price_cents     BIGINT,
+    reasons         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    inputs          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (equity_id, score_date)
+);
+CREATE INDEX IF NOT EXISTS idx_screener_scores_date_rank
+    ON screener_scores(score_date, rank);
+
+-- Daily-bar upserts for the screener pipeline (hypertable-safe unique index).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_market_bars_eq_tf_time
+    ON market_bars(equity_id, timeframe, time);
+
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     portfolio_id         INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
     snapshot_date        DATE NOT NULL,
@@ -798,6 +838,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.macro_task = asyncio.create_task(macro_scheduler.run())
     print("[startup] Macro FRED scheduler started.")
 
+    # ── Screener nightly scoring + EOD portfolio snapshots ────────────────────
+    screener_scheduler = ScreenerScheduler(pool)
+    app.state.screener_scheduler = screener_scheduler
+    app.state.screener_task = asyncio.create_task(screener_scheduler.run())
+    snapshot_scheduler = PortfolioSnapshotScheduler(pool)
+    app.state.snapshot_scheduler = snapshot_scheduler
+    app.state.snapshot_task = asyncio.create_task(snapshot_scheduler.run())
+    print("[startup] Screener + portfolio snapshot schedulers started.")
+
     # ── Register jobs in the ops metrics registry (for the Tools tab) ──────────
     if app.state.finnhub_client is not None:
         METRICS.register_job("finnhub_ws", "backend", "running")
@@ -810,6 +859,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         METRICS.register_job("signal_retention", "backend", "idle")
     METRICS.register_job("strategy_scheduler", "backend", "running")
     METRICS.register_job("macro_fred_refresh", "backend", "running")
+    METRICS.register_job("screener_nightly", "backend", "idle")
+    METRICS.register_job("portfolio_snapshots", "backend", "idle")
 
     yield
 
@@ -845,6 +896,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.macro_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await app.state.macro_task
+    await app.state.screener_scheduler.stop()
+    app.state.screener_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await app.state.screener_task
+    await app.state.snapshot_scheduler.stop()
+    app.state.snapshot_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await app.state.snapshot_task
     await app.state.strategy_scheduler.stop()
     app.state.strategy_scheduler_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -890,6 +949,7 @@ app.include_router(signals_router, dependencies=_auth_dep)
 app.include_router(ops_router, dependencies=_auth_dep)
 app.include_router(macro_router, dependencies=_auth_dep)
 app.include_router(portfolio_router, dependencies=_auth_dep)
+app.include_router(screener_router, dependencies=_auth_dep)
 
 
 @app.middleware("http")

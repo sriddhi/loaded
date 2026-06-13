@@ -44,6 +44,7 @@ export default function Home(): React.JSX.Element {
         {[
           { href: "/fundamentals", label: "Fundamentals" },
           { href: "/signals", label: "Signals" },
+          { href: "/discover", label: "Discover" },
           { href: "/strategies", label: "Strategy Lab" },
           { href: "/tools", label: "Tools" },
           { href: "/portfolio", label: "Portfolio" },

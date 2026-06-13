@@ -227,6 +227,42 @@
       "sha256": "4c608ff06bf004fd673b8401c204aafd29f8b31514cc7c71a2ad99e244732c9e",
       "locked_at": "2026-06-12T23:16:24Z",
       "version": "1.0"
+    },
+    {
+      "path": "ai/generator/screener/screener_universe_generator.md",
+      "sha256": "ae82bd35013ed46a0b154b974a00222acffc23b5197b94303a2649d670650048",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/screener/screener_universe_evaluator.md",
+      "sha256": "64e65d6a5190c50a41c6d6df2ba5b5f97dc0b53515228a75c13610c4c926400d",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/screener/screener_scoring_generator.md",
+      "sha256": "4696b23b4e474b18612490aaef528e8c538363edf81d9b9ac1badd68902a2abd",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/screener/screener_scoring_evaluator.md",
+      "sha256": "b8db0e35c7998aac5e0e296d1fb0e97e757b8de6c5a09512efb1e02ceab6ac40",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/generator/portfolio/portfolio_snapshots_generator.md",
+      "sha256": "c2158539d55bb472c66d817b0424ba6aba8a73566e73a1680b5da7b1ec58081f",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
+    },
+    {
+      "path": "ai/evaluator/portfolio/portfolio_snapshots_evaluator.md",
+      "sha256": "91172f9875be82d55de8229e13d67e66716ae8a49cd90d7e06c53fd2947b6bd3",
+      "locked_at": "2026-06-12T23:31:40Z",
+      "version": "1.0"
     }
   ]
 }

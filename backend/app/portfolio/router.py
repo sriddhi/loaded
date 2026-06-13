@@ -329,7 +329,29 @@ async def holdings(
     async with _pool(request).acquire() as conn:
         await _own(conn, pid, _uid(user))
         valued = await _valued_holdings(request, conn, pid)
-    return {"holdings": [h.model_dump() for h in valued], "disclaimer": DISCLAIMER}
+        scores: dict[str, dict[str, Any]] = {}
+        if valued:
+            rows = await conn.fetch(
+                """
+                SELECT e.symbol, s.composite, s.candidate, s.rank
+                FROM screener_scores s JOIN equities e ON e.id = s.equity_id
+                WHERE e.symbol = ANY($1)
+                  AND s.score_date = (SELECT max(score_date) FROM screener_scores)
+                """,
+                [h.symbol for h in valued],
+            )
+            scores = {
+                r["symbol"]: {
+                    "composite": float(r["composite"]) if r["composite"] is not None else None,
+                    "candidate": r["candidate"],
+                    "rank": r["rank"],
+                }
+                for r in rows
+            }
+    return {
+        "holdings": [{**h.model_dump(), "score": scores.get(h.symbol)} for h in valued],
+        "disclaimer": DISCLAIMER,
+    }
 
 
 @router.get("/{pid}/allocation", response_model=AllocationOut)
@@ -433,6 +455,129 @@ async def take_snapshot(
         unrealized_pnl=unrealized_cents / 100,
         holdings_count=len(valued),
     )
+
+
+# ── Performance ───────────────────────────────────────────────────────────────
+
+_RANGES = {"1m": 31, "3m": 92, "6m": 183, "1y": 366, "all": 10_000}
+
+
+async def _beta(
+    request: Request, conn: asyncpg.Connection, valued: list[HoldingOut]
+) -> tuple[float | None, float]:
+    """Portfolio beta vs SPY from 1y of stored daily closes; (beta, coverage)."""
+    from app.screener.data import closes_map
+
+    symbols = [h.symbol for h in valued]
+    closes: dict[str, list[float]] = await closes_map(
+        request.app.state.pool, [*symbols, "SPY"], days=260
+    )
+    spy = closes.get("SPY", [])
+    if len(spy) < 61:
+        return None, 0.0
+    spy_ret = [spy[i] / spy[i - 1] - 1 for i in range(1, len(spy))]
+
+    def beta_for(sym: str) -> float | None:
+        c = closes.get(sym, [])
+        if len(c) < 61:
+            return None
+        r = [c[i] / c[i - 1] - 1 for i in range(1, len(c))]
+        n = min(len(r), len(spy_ret))
+        if n < 60:
+            return None
+        rs, rm = r[-n:], spy_ret[-n:]
+        mean_s, mean_m = sum(rs) / n, sum(rm) / n
+        var_m = sum((x - mean_m) ** 2 for x in rm) / n
+        if var_m == 0:
+            return None
+        cov = sum((rs[i] - mean_s) * (rm[i] - mean_m) for i in range(n)) / n
+        return cov / var_m
+
+    total_value = sum(h.market_value or h.cost_basis for h in valued)
+    if total_value <= 0:
+        return None, 0.0
+    weighted = 0.0
+    covered = 0.0
+    for h in valued:
+        b = beta_for(h.symbol)
+        if b is None:
+            continue
+        w = (h.market_value or h.cost_basis) / total_value
+        weighted += w * b
+        covered += w
+    if covered < 0.5:
+        return None, round(covered, 2)
+    return round(weighted / covered, 2), round(covered, 2)
+
+
+@router.get("/{pid}/performance")
+async def performance(
+    pid: int,
+    request: Request,
+    range: str = Query("3m", pattern="^(1m|3m|6m|1y|all)$"),  # noqa: A002
+    user: Any = Depends(get_current_user),
+) -> dict[str, Any]:
+    from app.portfolio.math import chained_twr
+
+    days = _RANGES[range]
+    async with _pool(request).acquire() as conn:
+        await _own(conn, pid, _uid(user))
+        snaps = await conn.fetch(
+            "SELECT * FROM portfolio_snapshots WHERE portfolio_id = $1 "
+            "AND snapshot_date >= CURRENT_DATE - $2::int ORDER BY snapshot_date",
+            pid,
+            days,
+        )
+        contrib = await conn.fetchrow(
+            """
+            SELECT
+              COALESCE(SUM(amount_cents) FILTER (WHERE tx_type IN ('deposit','withdrawal')), 0)
+                AS net_contributions,
+              COALESCE(SUM(amount_cents) FILTER (
+                  WHERE tx_type = 'dividend'
+                    AND trade_date >= CURRENT_DATE - $2::int), 0) AS income
+            FROM portfolio_transactions WHERE portfolio_id = $1
+            """,
+            pid,
+            days,
+        )
+        valued = await _valued_holdings(request, conn, pid)
+        beta, beta_cov = await _beta(request, conn, valued)
+
+    rows = [dict(s) for s in snaps]
+    series = []
+    index = 1.0
+    for i, s in enumerate(rows):
+        if i > 0 and rows[i - 1]["total_value_cents"] > 0:
+            prev = rows[i - 1]["total_value_cents"]
+            r = (s["total_value_cents"] - s["net_flow_cents"] - prev) / prev
+            index *= 1.0 + r
+        series.append(
+            {
+                "date": s["snapshot_date"].isoformat(),
+                "total_value": s["total_value_cents"] / 100,
+                "twr_index": round(index, 4),
+            }
+        )
+    twr = chained_twr(rows)
+    current_total = sum(h.market_value or h.cost_basis for h in valued) + (
+        pdb.dollars(rows[-1]["cash_cents"]) if rows else 0.0
+    )
+    net_contrib = pdb.dollars(int(contrib["net_contributions"])) if contrib else 0.0
+    simple = ((current_total - net_contrib) / net_contrib * 100) if net_contrib > 0 else None
+    return {
+        "series": series,
+        "twr_pct": round(twr * 100, 2) if twr is not None else None,
+        "simple_return_pct": round(simple, 2) if simple is not None else None,
+        "simple_return_label": "vs money in",
+        "realized_pnl": rows[-1]["realized_pnl_cents"] / 100 if rows else None,
+        "unrealized_pnl": rows[-1]["unrealized_pnl_cents"] / 100 if rows else None,
+        "income": pdb.dollars(int(contrib["income"])) if contrib else 0.0,
+        "net_contributions": net_contrib,
+        "beta": beta,
+        "beta_coverage": beta_cov,
+        "disclaimer": DISCLAIMER,
+    }
 
 
 # ── Alpaca paper sync ────────────────────────────────────────────────────────
