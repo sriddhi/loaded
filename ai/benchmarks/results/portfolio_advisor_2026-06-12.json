@@ -1,0 +1,41 @@
+{
+  "feature": "portfolio_advisor (Discover/Build/Track/Insights)",
+  "modules": ["portfolio", "screener"],
+  "date": "2026-06-12",
+  "generators": [
+    "ai/generator/portfolio/portfolio_core_generator.md",
+    "ai/generator/portfolio/portfolio_snapshots_generator.md",
+    "ai/generator/portfolio/portfolio_insights_generator.md",
+    "ai/generator/portfolio/portfolio_commentary_generator.md",
+    "ai/generator/screener/screener_universe_generator.md",
+    "ai/generator/screener/screener_scoring_generator.md"
+  ],
+  "score": {
+    "track_money_math": "pass",
+    "track_auth_scoping_404": "pass",
+    "track_alpaca_sync_readonly_idempotent": "pass",
+    "snapshots_fallback_chain_twr": "pass",
+    "discover_determinism_missing_data": "pass",
+    "discover_label_ladder_incl_strong_sell": "pass",
+    "discover_universe_seed_refresh": "pass",
+    "build_health_checks_suggestions": "pass",
+    "insights_composition_empty_safe": "pass",
+    "commentary_cache_provider_disclaimer": "pass",
+    "ui_pages_render": "pass"
+  },
+  "caveats": [
+    "Pillar coverage converges over ~4 nightly ingest budgets (120/night); low-coverage names honestly labeled hold.",
+    "Synced (alpaca_paper) portfolios carry no transactions, so realized P&L is n/a there (documented).",
+    "Sector labels normalized at read time (yfinance 'Technology' -> GICS 'Information Technology')."
+  ],
+  "evidence": {
+    "unit_tests": "75 portfolio+screener tests passing (497 total in container; 2 pre-existing container-only alpaca MCP config failures)",
+    "live_track": "deposit->buy->partial-sell exact to the cent (avg $200.10, realized $199.60); oversell/overdraw 422; Alpaca paper sync idempotent (portfolio 2, $99,993.79 cash)",
+    "live_discover": "516 symbols scored (19 buy / 10 sell / 487 hold), statements 9->129 after one budgeted night, /discover serving ranked candidates with reasons",
+    "live_snapshots": "EOD snapshot upserted; performance: simple +7.46% vs money in, beta 0.91 (cov 1.0), TWR None with <2 points (correct)",
+    "live_insights": "health flags AAPL 100% concentration (diversification 36); macro impacts map IGV/SMH tailwinds + SPY-21dma headwind onto 100% IT exposure; suggestions cap at 10% (ALL/NVDA/AMP)",
+    "live_commentary": "bridge-generated 2,350-char grounded review in 28s; same-day cache 0.25s cached:true; GET path serves cache; disclaimer enforced",
+    "mandate": "check_generator_mandate.py --all PASS (13 modules)"
+  },
+  "result": "PASS"
+}

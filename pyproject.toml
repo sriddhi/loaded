@@ -12,10 +12,10 @@ indent-style = "space"
 
 [tool.mypy]
 python_version = "3.11"
-strict = false
+# Mandatory type safety: every function's input params and return type must be
+# annotated; no implicit Any, no bare generics, no untyped calls.
+strict = true
 ignore_missing_imports = true
-disallow_untyped_defs = true
-warn_return_any = true
 warn_unused_ignores = true
 explicit_package_bases = true
 exclude = ["backend/tests/"]

@@ -1,23 +1,20 @@
 import HeartbeatDot from "@/components/HeartbeatDot";
-import UserBadge from "@/components/UserBadge";
 
-export default function Home() {
+export default function Home(): React.JSX.Element {
   return (
     <main
       style={{
-        height: "100vh",
+        height: "100dvh",
+        overflowY: "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         gap: "12px",
         userSelect: "none",
-        position: "relative",
+        padding: "24px 16px",
       }}
     >
-      {/* User badge — top right */}
-      <UserBadge />
-
       {/* Wordmark */}
       <h1
         style={{
@@ -43,6 +40,43 @@ export default function Home() {
       >
         Trading intelligence
       </p>
+
+      {/* Nav */}
+      <nav
+        style={{
+          display: "flex",
+          gap: "14px 20px",
+          marginTop: 24,
+          flexWrap: "wrap",
+          justifyContent: "center",
+        }}
+      >
+        {[
+          { href: "/fundamentals", label: "Fundamentals" },
+          { href: "/signals", label: "Signals" },
+          { href: "/discover", label: "Discover" },
+          { href: "/strategies", label: "Strategy Lab" },
+          { href: "/tools", label: "Tools" },
+          { href: "/portfolio", label: "Portfolio" },
+          { href: "/macro", label: "Macro" },
+          { href: "/paper", label: "Paper Trading" },
+          { href: "/settings", label: "Settings" },
+        ].map((l) => (
+          <a
+            key={l.href}
+            href={l.href}
+            style={{
+              color: "var(--accent, #e8ff47)",
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            {l.label}
+          </a>
+        ))}
+      </nav>
 
       {/* Heartbeat status dot — bottom center */}
       <HeartbeatDot />

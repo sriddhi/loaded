@@ -1,0 +1,18 @@
+{
+  "feature": "fundamentals_refresh",
+  "module": "fundamentals",
+  "date": "2026-06-10",
+  "generator": "ai/generator/fundamentals/fundamentals_refresh_generator.md",
+  "evaluator": "ai/evaluator/fundamentals/fundamentals_refresh_evaluator.md",
+  "score": "36/36",
+  "result": "pass",
+  "summary": "Two-layer freshness for stored statements. Lazy TTL (stale-while-revalidate, per-symbol dedup, as_of surfaced) + earnings-aware ingest (Finnhub calendar -> earnings_watch queue, poll every 30m in window, done when MAX(period_end) advances, age-out at T+2 NYSE trading days via exchange_calendars XNYS). In-process asyncio scheduler in lifespan, resumable via DB tables. Verified live: tables created, scheduler started, calendar sync ran (no upcoming earnings for tracked names = correct), as_of in statements+metrics, health pending count. 16 new tests incl. holiday-skip assertion; full suite 283 passed (2 pre-existing Alpaca failures). ruff + strict mypy + mandate gate green.",
+  "checks": {
+    "market_calendar_nyse": "pass",
+    "lazy_ttl_read_path": "pass",
+    "earnings_calendar_sync": "pass",
+    "poller": "pass",
+    "scheduler_wiring": "pass",
+    "quality": "pass"
+  }
+}

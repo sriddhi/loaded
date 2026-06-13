@@ -1,0 +1,45 @@
+{
+  "feature": "fundamentals DCF (Buffett-grade intrinsic value)",
+  "evaluator": "ai/evaluator/fundamentals/dcf_evaluator.md",
+  "date": "2026-06-11",
+  "score": 10.0,
+  "checks": {
+    "formula_correctness": {
+      "owner_earnings_ocf_minus_abs_capex": "pass — test_owner_earnings_is_ocf_minus_abs_capex",
+      "base_oe_min_latest_vs_3yr_mean": "pass — run_dcf + assumptions echo",
+      "two_stage_pv_hand_fixture_1e6": "pass — two fixtures (zero-growth incl. fade-up, 10% growth) match to <1e-9",
+      "equity_bridge_net_debt_per_share": "pass — test_net_debt_reduces_intrinsic; cents→dollars once"
+    },
+    "constraints": {
+      "growth_min_capped_15_floored_0": "pass — test_growth_capped_at_15_pct_and_floored_at_zero",
+      "terminal_le_2_5_and_lt_discount_minus_1": "pass — min(0.025, d−0.01) in two_stage_dcf",
+      "discount_default_10_floor_8_leverage_plus_2": "pass — test_discount_floor_and_leverage_penalty",
+      "mos_base_30_adjust_clamp_25_50": "pass — test_margin_of_safety_clamped_both_ends",
+      "sensitivity_3x3_monotonic": "pass — test_sensitivity_grid_shape_and_monotonicity"
+    },
+    "quality_gates": {
+      "lt4_periods": "pass — test_gate_insufficient_history",
+      "non_positive_oe": "pass — test_gate_negative_owner_earnings",
+      "cv_gt_0_6": "pass — test_gate_erratic_cash_flows; live: HOOD refused (CV 2.48)",
+      "missing_shares": "pass — test_gate_missing_shares",
+      "api_200_on_refusal": "pass — DcfResponse not_valuable, no 500"
+    },
+    "auditability_safety": {
+      "assumptions_echoed": "pass — test_verdicts_and_assumptions_echoed",
+      "deterministic_no_llm": "pass — pure functions, env-pinned discount",
+      "jwt_read_only": "pass — fundamentals router mount under _auth_dep",
+      "mypy_ruff_clean": "pass"
+    },
+    "ui": {
+      "card_with_verdict_assumptions_sensitivity": "pass — DCF card in built bundle",
+      "not_valuable_lists_reasons": "pass",
+      "dashes_and_disclaimer": "pass — 'not financial advice' present"
+    }
+  },
+  "live_verification": {
+    "AAPL": "overvalued — intrinsic $58.07 vs $292.85 (OE $98.8B, g=0 due to declining OE, d=12% leverage penalty, MoS 35%)",
+    "KO": "overvalued — intrinsic $3.45 vs $83.52 (OE collapsed $9.5B→$5.3B in stored span, g=0, d=12%)",
+    "HOOD": "not_valuable — OE negative in 2+ of last 4 years; CV 2.48 > 0.6 (refused, no fabricated number)"
+  },
+  "tests": "13/13 test_fundamentals_dcf.py; full suite 386 passed (2 pre-existing Alpaca-config failures)"
+}

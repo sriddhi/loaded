@@ -1,0 +1,17 @@
+{
+  "feature": "spy_signals",
+  "module": "signals",
+  "date": "2026-06-10",
+  "generator": "ai/generator/signals/spy_signals_generator.md",
+  "evaluator": "ai/evaluator/signals/spy_signals_evaluator.md",
+  "score": "32/32",
+  "result": "pass",
+  "summary": "Every-minute SPY heuristic signal job (bullish/bearish/bull_trap/bear_trap/neutral) over 5/10/20 min, persisted to spy_signals; latest/history/run endpoints; in-process asyncio job in lifespan; /signals UI with color-coded badges, history, run-now, auto-refresh, and a not-advice disclaimer. Engine is pure/deterministic. Verified live: job started, run produced a signal (neutral after-hours, flat series — correct), history accumulates, page renders. 20 new tests incl. all 4 directional labels via synthetic series. Full suite 308 passed (2 pre-existing Alpaca failures). ruff + strict mypy + eslint + tsc + mandate green. No trade execution.",
+  "checks": {
+    "engine": "pass",
+    "job_storage": "pass",
+    "api_wiring": "pass",
+    "ui": "pass",
+    "quality": "pass"
+  }
+}

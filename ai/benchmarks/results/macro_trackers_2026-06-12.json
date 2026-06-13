@@ -1,0 +1,38 @@
+{
+  "feature": "macro_trackers",
+  "module": "macro",
+  "date": "2026-06-12",
+  "generator": "ai/generator/macro/macro_trackers_generator.md",
+  "evaluator": "ai/evaluator/macro/macro_trackers_evaluator.md",
+  "score": {
+    "data_freshness": {
+      "keyless_csv_fallback_and_api_switch": "pass",
+      "idempotent_upserts_incremental_refresh": "pass",
+      "history_since_1990": "pass_with_caveat",
+      "scheduler_ttl_metrics_manual_refresh": "pass"
+    },
+    "signals": {
+      "all_11_fred_rules_unit_tested": "pass",
+      "technical_ma_alerts": "pass",
+      "deterministic_missing_data_safe": "pass"
+    },
+    "api_ui_safety": {
+      "jwt_on_all_routes_404_422": "pass",
+      "macro_page_cards_charts_badges_freshness_nav_disclaimer": "pass",
+      "read_only_mypy_ruff_tests": "pass"
+    }
+  },
+  "caveats": [
+    "history_since_1990: monthly/weekly series ingest from 1990 keyless; FRED's fredgraph.csv 504s on dense daily series over long windows, so keyless dailies (DFF, DGS2, DGS10, ECBDFR, DEXUSEU) ingest via a narrowing ladder (1990 -> 2018 -> 2023 start). Setting FRED_API_KEY restores full 1990+ daily history via the official API."
+  ],
+  "evidence": {
+    "unit_tests": "24 passed (tests/test_macro_{signals,fred,registry,refresh,router}.py, in-container)",
+    "full_suite": "418 passed in-container (2 pre-existing container-only alpaca MCP config failures, unrelated)",
+    "live_refresh": "POST /macro/refresh ingested all 15 registry series (e.g. CPIAUCSL 436 obs 1990->2026-05, ICSA 1901 obs, DGS2 2111 obs)",
+    "live_alerts": "GET /macro/alerts evaluated 15 rules on real data; fired: real_wages_negative, income_spread_falling_3m, ppi_hot_core_rolling, margin_squeeze, spy_21dma, igv_50dma, smh_50dma",
+    "live_api_paths": "GET /macro/trackers 8 cards + 15 freshness rows; /macro/series/DGS2 ok; unknown series 404; unauthenticated 401",
+    "ui": "/macro page 200, container build passes eslint + strict tsc",
+    "mandate": "scripts/check_generator_mandate.py --all PASS"
+  },
+  "result": "PASS"
+}

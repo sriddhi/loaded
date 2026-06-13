@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import AuthProvider from "@/components/AuthProvider";
+import { AuthProvider } from "../context/AuthContext";
 
 export const metadata: Metadata = {
   title: "Loaded",
   description: "Trading intelligence platform",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
       <body>

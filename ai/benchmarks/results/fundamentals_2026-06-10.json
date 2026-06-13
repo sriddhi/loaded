@@ -1,0 +1,18 @@
+{
+  "feature": "fundamentals",
+  "module": "fundamentals",
+  "date": "2026-06-10",
+  "generator": "ai/generator/fundamentals/fundamentals_generator.md",
+  "evaluator": "ai/evaluator/fundamentals/fundamentals_evaluator.md",
+  "score": "40/40",
+  "result": "pass",
+  "summary": "Raw yfinance statements + on-demand metric engine + Finnhub websocket live price. Verified live: refresh wrote 9 periods, statements return cents + computed gross_margin, metrics compute roe/net_margin/debt_to_equity/revenue_cagr_3y on demand (pe null without live price), unknown metric -> 422, price -> 503 when markets closed. 32 new unit/router tests pass; full suite 248 passed (2 pre-existing unrelated Alpaca MCP-path failures). ruff + strict mypy + mandate gate green.",
+  "checks": {
+    "oop_model": "pass",
+    "metric_engine": "pass",
+    "db_schema": "pass",
+    "websocket_live_price": "pass",
+    "api_wiring": "pass",
+    "tests_quality": "pass"
+  }
+}

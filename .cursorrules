@@ -1,0 +1,23 @@
+# Cursor rules — pointer to the canonical mandate
+
+This repo enforces a NON-NEGOTIABLE generator+evaluator system (Rule #1) for
+ALL code, regardless of which tool wrote it.
+
+READ AND FOLLOW: AGENTS.md (and CLAUDE.md for the full reference).
+
+Summary of Rule #1 — before writing/modifying code under backend/app/{module}/:
+  1. Finalize design in chat (no code yet).
+  2. Write ai/generator/{module}/{feature}_generator.md
+  3. Write ai/evaluator/{module}/{feature}_evaluator.md
+  4. Lock both: ./scripts/lock_prompt.sh <file>
+  5. Build from the generator spec.
+  6. Run the evaluator; fix all failures.
+
+This is ENFORCED at commit and merge time by:
+  - .githooks/pre-commit
+  - .github/workflows/pr_checks.yml (job: rule1-mandate — hard blocks merge)
+  - scripts/check_generator_mandate.py  (config: ai/mandate.json)
+
+You cannot merge code that touches a module without a generator+evaluator,
+or that modifies a locked prompt without an unlock log entry. Do not try to
+work around the gate — author the prompts first.
